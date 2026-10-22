@@ -69,7 +69,19 @@
       /* layout */
       .app-header{position:sticky;top:0;z-index:80;padding-top:env(safe-area-inset-top,0px);background:linear-gradient(180deg,#8a5a2b,#6b3f1d);border-bottom:3px solid #4a2c14;}
       .menu-btn{min-width:48px;min-height:48px;position:relative;z-index:2;}
-      .hud-inner{max-width:1400px;margin:0 auto;padding:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+      .hud-inner{max-width:1400px;margin:0 auto;padding:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;transition:padding .3s ease,gap .3s ease;}
+      /* HUD 滚动收缩：下滑收成细条（只剩菜单/金币/积分/同步），回顶部展开；.hud-extra 是细条里隐藏的行 */
+      .hud-extra{max-height:72px;transition:max-height .3s ease,max-width .3s ease,min-width .3s ease,opacity .22s ease,transform .3s ease,margin .3s ease,padding .3s ease,border-width .3s ease;}
+      .app-header.hud-slim .hud-inner{padding-top:4px;padding-bottom:4px;gap:6px;}
+      .app-header.hud-slim .hud-extra{max-height:0;max-width:0!important;min-width:0!important;flex:0 0 0!important;overflow:hidden;opacity:0;transform:scale(.8);margin:0!important;padding:0!important;border-width:0!important;box-shadow:none!important;pointer-events:none;}
+      .app-header.hud-slim .sync-badge{font-size:11px;line-height:16px;padding:0 5px;}
+      @media (min-width:900px){
+        .app-sidebar{transition:top .3s ease;}
+        body.hud-slim .app-sidebar{top:calc(38px + env(safe-area-inset-top,0px));}
+      }
+      @media (prefers-reduced-motion: reduce){
+        .hud-inner,.hud-extra,.app-sidebar{transition:none!important;}
+      }
       .shell{max-width:1400px;margin:0 auto;display:flex;align-items:flex-start;}
       .app-sidebar{display:none;}
       @media (min-width:900px){
@@ -1839,13 +1851,13 @@ function renderHud(){
   var heartsHtml="";for(var i=0;i<5;i++)heartsHtml+=pixIcon(i<hearts?"heart":"heartEmpty",15);
   document.getElementById("hud").innerHTML=
     '<button type="button" class="pix-btn pix-btn-ghost menu-btn" style="min-height:48px;min-width:48px" data-act="drawer-open" aria-label="打开导航菜单"><span style="display:inline-flex;align-items:center;gap:4px">'+pixIcon("menu",16)+" 菜单</span></button>"
-    +'<span class="font-pixel brand-mobile" style="color:#ffd83d;text-shadow:1px 1px 0 #3a2110;font-size:17px">番鼠农场</span>'
-    +'<div class="wood-panel" style="padding:4px 8px;box-shadow:2px 2px 0 rgba(46,26,8,.5);display:flex;align-items:center;gap:8px">'
+    +'<span class="font-pixel brand-mobile hud-extra" style="color:#ffd83d;text-shadow:1px 1px 0 #3a2110;font-size:17px">番鼠农场</span>'
+    +'<div class="wood-panel hud-extra" style="padding:4px 8px;box-shadow:2px 2px 0 rgba(46,26,8,.5);display:flex;align-items:center;gap:8px">'
     +pixIcon(s.icon,20)+'<span class="font-pixel" style="font-size:15px">'+s.season+"季 "+s.day+' 日</span><span class="small">'+today+" · 周"+weekdayOf(today)+"</span></div>"
     +'<div style="display:flex;align-items:center;gap:4px" aria-label="金币 '+S.wallet.gold+' G"><span class="coinjump" style="display:inline-flex">'+pixIcon("coin",17)+'</span><b class="font-num small" style="color:#ffd83d;text-shadow:1px 1px 0 #3a2110">'+S.wallet.gold+'</b><span class="xs" style="color:#f3dfba">G</span></div>'
     +'<div style="display:flex;align-items:center;gap:4px" aria-label="积分 '+S.wallet.points+' 分"><span style="display:inline-flex">'+pixIcon("star",15)+'</span><b class="font-num small" style="color:#ffe9a8;text-shadow:1px 1px 0 #3a2110">'+S.wallet.points+'</b><span class="xs" style="color:#f3dfba">分</span></div>'
-    +'<div style="display:flex;align-items:center;gap:2px" aria-label="今日待办完成 '+done+"/"+my.length+'">'+heartsHtml+"</div>"
-    +'<div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px;min-width:120px" aria-label="今日进度 '+progress+'%"><span class="xs" style="white-space:nowrap;color:#f3dfba">今日进度</span><div style="height:12px;flex:1;background:#3a2110;border:2px solid #ffe9a8"><div style="width:'+progress+'%;height:100%;background:#5da33c;transition:width .4s"></div></div><span class="font-num" style="font-size:10px;color:#ffe9a8">'+progress+"%</span></div>"
+    +'<div class="hud-extra" style="display:flex;align-items:center;gap:2px" aria-label="今日待办完成 '+done+"/"+my.length+'">'+heartsHtml+"</div>"
+    +'<div class="hud-extra" style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px;min-width:120px" aria-label="今日进度 '+progress+'%"><span class="xs" style="white-space:nowrap;color:#f3dfba">今日进度</span><div style="height:12px;flex:1;background:#3a2110;border:2px solid #ffe9a8"><div style="width:'+progress+'%;height:100%;background:#5da33c;transition:width .4s"></div></div><span class="font-num" style="font-size:10px;color:#ffe9a8">'+progress+"%</span></div>"
     +'<span class="pix-tag sync-badge" style="margin-left:auto;'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span>';
 }
 function navButton(n,iconOnly){
@@ -3657,6 +3669,27 @@ function render(){
   restoreEditState(cap);
   lastRenderPage=ui.page;
 }
+
+/* ============ HUD 滚动收缩（细条） ============ */
+/* 迟滞：下滑超过 40px 才收起、回到 6px 以内才展开，中间区间保持当前状态，避免临界点反复伸缩。
+   只切 class、不触发 render，不干扰 render() 的滚动位置保留；状态挂在 header/body 上，renderHud 重绘不丢。 */
+var hudSlimState=false;
+var hudHeaderEl=document.querySelector(".app-header");
+function hudOnScroll(){
+  if(!hudHeaderEl)hudHeaderEl=document.querySelector(".app-header");
+  if(!hudHeaderEl)return;
+  var y=window.scrollY||document.documentElement.scrollTop||0;
+  if(!hudSlimState&&y>40){
+    hudSlimState=true;
+    hudHeaderEl.classList.add("hud-slim");
+    document.body.classList.add("hud-slim");
+  }else if(hudSlimState&&y<=6){
+    hudSlimState=false;
+    hudHeaderEl.classList.remove("hud-slim");
+    document.body.classList.remove("hud-slim");
+  }
+}
+window.addEventListener("scroll",hudOnScroll,{passive:true});
 
 /* ============ 事件委托 ============ */
 function toastShop(msg){ui.shopMsg=msg;}
