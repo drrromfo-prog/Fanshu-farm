@@ -224,6 +224,16 @@
       @media (prefers-reduced-motion: reduce){
         #junimo,.junimo-jump,.junimo-star,.junimo-petbtn.junimo-wave{animation:none!important;}
       }
+      /* 秘密纸条层（四件套）：层级 34，略低于祝尼魔层，同样避开悬浮小人 */
+      #secretnote{position:fixed;z-index:34;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.6s ease-in-out infinite;}
+      .fest-mark{display:inline-flex;line-height:0;}
+      /* 今日页四季轻氛围：小色点轻浮动（复用天气特效的视觉语言） */
+      .season-amb{position:relative;height:14px;overflow:visible;pointer-events:none;margin-top:2px;}
+      .season-amb span{position:absolute;top:2px;width:7px;height:7px;opacity:.7;animation:seasonamb 5s ease-in-out infinite;}
+      @keyframes seasonamb{0%,100%{margin-top:0;}50%{margin-top:4px;}}
+      @media (prefers-reduced-motion: reduce){
+        #secretnote,.season-amb span{animation:none!important;}
+      }
     </style>
   </head>
   <body class="locked" style="overflow:hidden">
@@ -247,6 +257,7 @@
     <div id="undo-root"></div>
     <div id="fx-layer" aria-hidden="true"></div>
     <div id="junimo-root"></div>
+    <div id="secretnote-root"></div>
     <div id="companion-root"></div>
     <script>
 "use strict";
@@ -727,7 +738,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false}
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},stardrops:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -751,6 +762,10 @@ function normalizeState(){
   });
   if(!S.unlocked||typeof S.unlocked!=="object"||Array.isArray(S.unlocked))S.unlocked={};
   if(!Array.isArray(S.newsDays))S.newsDays=[];
+  if(!S.stardrops||typeof S.stardrops!=="object"||Array.isArray(S.stardrops))S.stardrops={};
+  if(!S.notes||typeof S.notes!=="object"||Array.isArray(S.notes))S.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};
+  if(!Array.isArray(S.notes.found))S.notes.found=[];
+  if(!Array.isArray(S.notes.cycle))S.notes.cycle=[];
   if(!Array.isArray(S._del))S._del=[];
   var cutoff=Date.now()-90*86400000;
   S._del=S._del.filter(function(t){return t&&typeof t.ts==="number"&&t.ts>cutoff;});
@@ -1010,6 +1025,32 @@ function mergeStates(L,R){
   var go=(L.goldOwned||[]).slice();
   (R.goldOwned||[]).forEach(function(x){if(go.indexOf(x)<0)go.push(x);});
   out.goldOwned=go;
+  /* 星之果实授予记录：取并集（哪台设备授过都保留，已授日期取较早的一天） */
+  (function(){
+    var sd={};
+    [L.stardrops,R.stardrops].forEach(function(o){if(o&&typeof o==="object")Object.keys(o).forEach(function(k){if(typeof o[k]==="string"&&o[k]&&(!sd[k]||o[k]<sd[k]))sd[k]=o[k];});});
+    out.stardrops=sd;
+  })();
+  /* 秘密纸条：当天条目取日期较新的一份（同日时优先已找到的那份）；收藏 found 取并集，轮换池 cycle 取并集（宁可早洗牌，不重复发同一条） */
+  (function(){
+    var ln=(L.notes&&typeof L.notes==="object"&&!Array.isArray(L.notes))?L.notes:null;
+    var rn=(R.notes&&typeof R.notes==="object"&&!Array.isArray(R.notes))?R.notes:null;
+    if(!ln&&!rn){out.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};}
+    else if(!ln){out.notes=rn;}
+    else if(!rn){out.notes=ln;}
+    else{
+      function foundOn(o){return (o.found||[]).some(function(f){return f.date===o.date;});}
+      var pick=ln;
+      if(rn.date>ln.date)pick=rn;
+      else if(rn.date===ln.date&&foundOn(rn)&&!foundOn(ln))pick=rn;
+      var merged={date:pick.date,noteId:pick.noteId,page:pick.page,corner:pick.corner,found:[],cycle:[]};
+      var fseen={};
+      [ln.found,rn.found].forEach(function(arr){(arr||[]).forEach(function(f){if(f&&f.noteId){var k=f.date+"|"+f.noteId;if(!fseen[k]){fseen[k]=1;merged.found.push(f);}}});});
+      var cseen={};
+      [ln.cycle,rn.cycle].forEach(function(arr){(arr||[]).forEach(function(id){if(id&&!cseen[id]){cseen[id]=1;merged.cycle.push(id);}});});
+      out.notes=merged;
+    }
+  })();
   /* 钱包从账本推导：期初基数 + 合并后账本增量之和 */
   out._baseGold=typeof L._baseGold==="number"?L._baseGold:(typeof R._baseGold==="number"?R._baseGold:0);
   out._basePoints=typeof L._basePoints==="number"?L._basePoints:(typeof R._basePoints==="number"?R._basePoints:0);
@@ -2316,6 +2357,300 @@ function renderFx(){
   }
   layer.innerHTML=html;
 }
+/* ============ 星露谷融合四件套（2026-10-22 定案） ============
+   9 季节收集包（成就图鉴页）/ 10 星之果实（个人简介页）/ 11 秘密纸条（彩蛋，收藏进备忘录页）/ 12 节日节气（农场日历 + 今日页）。
+   铁律：不新增导航模块、不新造货币、只认真实记录自动判定、无手动标记入口；积分一律走 addLedger 带幂等键。 */
+/* 节日节气日期表（2026+2027）：节气据日本国立天文台暦要項交节时刻换算北京时间、与维基百科 JPL 曆书及香港天文台年历交叉核对；
+   农历节日据香港年历与紫金山天文台口径（注：2027 年春节官方为 2/6、除夕 2/5，与 ICU 农历数据差一天，此表以官方为准）。 */
+var TERM_NAMES=["小寒","大寒","立春","雨水","惊蛰","春分","清明","谷雨","立夏","小满","芒种","夏至","小暑","大暑","立秋","处暑","白露","秋分","寒露","霜降","立冬","小雪","大雪","冬至"];
+var TERM_FACTS=["小寒是一年里最冷的时节之一，讲究数九御寒。","大寒是二十四节气的最后一个，过了大寒，节气重新轮回。","立春是二十四节气之首，旧时这天有吃春饼「咬春」的习俗。","雨水时节冰雪融化，降水开始增多。","惊蛰一声春雷，蛰伏土里的虫子被惊醒。","春分这天昼夜等长，民间有竖蛋的习俗。","清明是节气里唯一兼作节日的，这天扫墓祭祖，也踏青插柳。","谷雨前后种瓜点豆，雨水滋润百谷生长。","立夏是夏季的第一个节气，旧时有称人、吃立夏饭的习俗。","小满时麦粒渐渐饱满，但还没有完全成熟。","芒种最忙：有芒的麦子要抢收，有芒的稻子要赶种。","夏至这天北半球白昼最长，民间有「冬至饺子夏至面」的说法。","小暑是小热，天气渐热但还没到最热的大暑。","大暑是一年里最热的节气。","立秋是秋天的第一个节气，民间有这天「贴秋膘」的说法。","处暑的「处」是止的意思，暑气到此为止。","白露后夜里转凉，露水凝结成白色。","秋分同样昼夜等长，这天也是中国农民丰收节。","寒露时露水带寒，菊花盛开。","霜降是秋天最后一个节气，柿子在这时节成熟。","立冬是冬天的第一个节气，北方有吃饺子的习俗。","小雪后开始降雪，一些地方会腌腊肉备冬。","大雪时雪量渐大，民间有「瑞雪兆丰年」的说法。","冬至这天北方多吃饺子、南方多吃汤圆，还有数九的习俗。"];
+var TERM_2026=["01-05","01-20","02-04","02-18","03-05","03-20","04-05","04-20","05-05","05-21","06-05","06-21","07-07","07-23","08-07","08-23","09-07","09-23","10-08","10-23","11-07","11-22","12-07","12-22"];
+var TERM_2027=["01-05","01-20","02-04","02-19","03-06","03-21","04-05","04-20","05-06","05-21","06-06","06-21","07-07","07-23","08-08","08-23","09-08","09-23","10-08","10-23","11-07","11-22","12-07","12-22"];
+var LUNAR_FEST=[
+  ["除夕","02-16","02-05","除夕夜的团年饭是一年里最重要的一顿，饭后守岁到零点。"],
+  ["春节","02-17","02-06","春节贴春联、放鞭炮，晚辈给长辈拜年，长辈给压岁钱。"],
+  ["元宵","03-03","02-20","正月十五吃汤圆或元宵，晚上赏花灯、猜灯谜。"],
+  ["端午","06-19","06-09","农历五月初五，吃粽子、赛龙舟，门上挂艾草和菖蒲。"],
+  ["七夕","08-19","08-08","农历七月初七，传说牛郎织女在鹊桥相会，旧时女子这夜穿针乞巧。"],
+  ["中秋","09-25","09-15","农历八月十五，赏月吃月饼，讲究一家团圆。"],
+  ["重阳","10-18","10-08","农历九月初九，登高、赏菊、佩茱萸，这天也是老年节。"]
+];
+var GREG_FEST=[
+  ["元旦","01-01","公历新年的第一天。"],
+  ["情人节","02-14","2 月 14 日情人节，源自西方的节日，习惯送花和巧克力。"],
+  ["万圣节","10-31","10 月 31 日是万圣节前夜，孩子们会装扮起来讨糖，南瓜灯是标志。"],
+  ["冬星盛宴","12-25","12 月 25 日圣诞节；在星露谷，这一天叫冬星盛宴，镇民会互赠秘密礼物。"]
+];
+var FESTIVALS={};
+(function(){
+  function put(date,name,fact,term){
+    if(FESTIVALS[date]){FESTIVALS[date].name=FESTIVALS[date].name+" · "+name;FESTIVALS[date].fact=FESTIVALS[date].fact+fact;FESTIVALS[date].term=FESTIVALS[date].term||term;}
+    else FESTIVALS[date]={name:name,fact:fact,term:term};
+  }
+  TERM_NAMES.forEach(function(n,i){put("2026-"+TERM_2026[i],n,TERM_FACTS[i],true);put("2027-"+TERM_2027[i],n,TERM_FACTS[i],true);});
+  LUNAR_FEST.forEach(function(r){put("2026-"+r[1],r[0],r[3],false);put("2027-"+r[2],r[0],r[3],false);});
+  GREG_FEST.forEach(function(r){put("2026-"+r[1],r[0],r[2],false);put("2027-"+r[1],r[0],r[2],false);});
+})();
+function festivalOf(date){return FESTIVALS[date]||null;}
+function ledgerHasIdem(idem){return S.ledger.some(function(l){return l.idem===idem;});}
+ICONS.noteSlip=[[3,2,9,12,"#fff6da"],[3,2,9,1,"#efe6cc"],[3,13,9,1,"#d8cba8"],[3,2,1,12,"#e8dcc0"],[11,2,1,4,"#e8dcc0"],[9,2,3,1,"#d8cba8"],[9,3,2,1,"#d8cba8"],[10,4,2,1,"#d8cba8"],[5,6,5,1,"#8a6a45"],[5,8,5,1,"#8a6a45"],[5,10,3,1,"#b99b62"]];
+ICONS.stardropGray=[[8,1,2,3,"#6a6a78"],[7,3,4,2,"#8a8a99"],[8,5,2,2,"#a8a8b8"],[6,7,6,2,"#a8a8b8"],[5,7,1,2,"#8a8a99"],[11,7,1,2,"#8a8a99"],[6,9,2,3,"#a8a8b8"],[10,9,2,3,"#a8a8b8"],[7,12,1,2,"#8a8a99"],[10,12,1,2,"#8a8a99"],[8,7,1,1,"#d8d8e0"]];
+
+/* ---------- 9. 季节收集包 ---------- */
+var BUNDLE_ITEMS=[
+  {key:"workout",label:"运动",unit:"次",target:12},
+  {key:"work",label:"办结工作",unit:"件",target:15},
+  {key:"study",label:"书房记录",unit:"条",target:8},
+  {key:"finDays",label:"记账天数",unit:"天",target:20},
+  {key:"reviewDays",label:"每日复盘",unit:"天",target:10},
+  {key:"pomodoro",label:"专注番茄",unit:"个",target:20}
+];
+var SEASON_ZH={spring:"春",summer:"夏",autumn:"秋",winter:"冬"};
+var JUNIMO_BUNDLE_COLORS=["green","red","blue","yellow","purple","orange"];
+function seasonKeyOf(date){
+  var y=+date.slice(0,4),m=+date.slice(5,7);
+  if(m>=3&&m<=5)return y+"-spring";
+  if(m>=6&&m<=8)return y+"-summer";
+  if(m>=9&&m<=11)return y+"-autumn";
+  return (m===12?y:y-1)+"-winter";
+}
+function seasonRangeOf(key){
+  var p=key.split("-"),y=+p[0],s=p[1];
+  if(s==="spring")return{start:key.slice(0,4)+"-03-01",end:key.slice(0,4)+"-05-31"};
+  if(s==="summer")return{start:key.slice(0,4)+"-06-01",end:key.slice(0,4)+"-08-31"};
+  if(s==="autumn")return{start:key.slice(0,4)+"-09-01",end:key.slice(0,4)+"-11-30"};
+  var febEnd=new Date(y+1,2,0).getDate();
+  return{start:y+"-12-01",end:(y+1)+"-02-"+pad2(febEnd)};
+}
+function seasonLabelOf(key){var p=key.split("-");return p[0]+" 年"+SEASON_ZH[p[1]]+"季";}
+function prevSeasonKeyOf(key){var r=seasonRangeOf(key);return seasonKeyOf(shiftDate(r.start,-1));}
+function bundleCounts(start,end){
+  function inR(d){return !!d&&d>=start&&d<=end;}
+  function daySet(arr){var s={};arr.forEach(function(r){if(inR(r.date))s[r.date]=1;});return Object.keys(s).length;}
+  return{
+    workout:S.workouts.filter(function(w){return inR(w.date);}).length,
+    work:S.workItems.filter(function(w){return w.done&&inR(w.doneDate);}).length,
+    study:S.studyLogs.filter(function(l){return inR(l.date);}).length,
+    finDays:daySet(S.financeTx),
+    reviewDays:daySet(S.reviews),
+    pomodoro:S.pomodoros.filter(function(p){return inR(p.date);}).length
+  };
+}
+function bundleProgressOf(key){
+  var r=seasonRangeOf(key);var c=bundleCounts(r.start,r.end);
+  var met=0;BUNDLE_ITEMS.forEach(function(it){if((c[it.key]||0)>=it.target)met++;});
+  return{counts:c,met:met,complete:met===BUNDLE_ITEMS.length};
+}
+function bundlePanelHtml(){
+  var curKey=seasonKeyOf(todayStr());var cur=bundleProgressOf(curKey);
+  var rows=BUNDLE_ITEMS.map(function(it,i){
+    var n=cur.counts[it.key]||0;var met=n>=it.target;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed #d8c491">'
+      +'<span style="flex:1"><b>'+it.label+'</b> <span class="dim small">'+n+" / "+it.target+" "+it.unit+"</span></span>"
+      +(met?'<span style="display:inline-flex;align-items:center;gap:6px">'+junimoSvg(JUNIMO_BUNDLE_COLORS[i%JUNIMO_BUNDLE_COLORS.length],22)+'<span class="small" style="color:#3d7a24">已被祝尼魔搬走</span></span>'
+           :'<span class="small dim">还差 '+(it.target-n)+" "+it.unit+"</span>")
+      +"</div>";
+  }).join("");
+  var head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><b class="font-pixel" style="font-size:16px">'+seasonLabelOf(curKey)+'收集包</b>'
+    +(cur.complete?'<span style="display:inline-flex;align-items:center;gap:5px">'+pixIcon("star",17)+'<span class="small">已集齐 · +30 分（见账本）</span></span>'
+                  :'<span class="small dim">完成 '+cur.met+" / "+BUNDLE_ITEMS.length+" 条 · 集齐 +30 分</span>")
+    +"</div>";
+  /* 存档：从有记录的最早季节到上一季，只列有动静或集齐的 */
+  var firstKey=seasonKeyOf(farmEarliestDate()||todayStr());
+  var arch=[];var k=curKey;var guard=0;
+  while(k!==firstKey&&guard<16){k=prevSeasonKeyOf(k);var pr=bundleProgressOf(k);var any=BUNDLE_ITEMS.some(function(it){return (pr.counts[it.key]||0)>0;});if(any||pr.complete)arch.push({key:k,pr:pr});guard++;}
+  var archHtml=arch.length===0?"":'<div style="margin-top:10px"><div class="small" style="font-weight:600;margin-bottom:4px">往季存档</div>'
+    +arch.map(function(a){return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="flex:1" class="small">'+seasonLabelOf(a.key)+'</span>'+(a.pr.complete?'<span style="display:inline-flex;align-items:center;gap:5px">'+pixIcon("star",15)+'<span class="small">已集齐</span></span>':'<span class="small dim">完成 '+a.pr.met+" / "+BUNDLE_ITEMS.length+" 条</span>")+"</div>";}).join("")+"</div>";
+  return panel("季节收集包","basket",head+rows+archHtml);
+}
+
+/* ---------- 10. 星之果实 ---------- */
+var STARDROPS=[
+  {key:"work200",label:"累计办结工作 200 件"},
+  {key:"pomo100",label:"累计番茄 100 个"},
+  {key:"workout100",label:"累计运动 100 次"},
+  {key:"review100",label:"累计复盘 100 天"},
+  {key:"habit365",label:"累计习惯打卡 365 次"},
+  {key:"fin1000",label:"累计记账 1000 笔"},
+  {key:"days365",label:"农场满 365 天"}
+];
+function distinctDaysOf(arr){var s={};(arr||[]).forEach(function(r){if(r&&r.date)s[r.date]=1;});return Object.keys(s).length;}
+function farmEarliestDate(){
+  var min=null;
+  function take(d){if(d&&typeof d==="string"&&(!min||d<min))min=d;}
+  [S.todos,S.workouts,S.studyLogs,S.financeTx,S.reviews,S.pomodoros,S.habitLogs,S.moods,S.anchorLogs].forEach(function(arr){(arr||[]).forEach(function(r){take(r.date);});});
+  S.workItems.forEach(function(w){take(w.doneDate);if(w.createdTs)take(dateStrOfTs(w.createdTs));});
+  S.ledger.forEach(function(l){take(l.date);});
+  return min;
+}
+function farmAgeDays(){var e=farmEarliestDate();if(!e)return 0;return Math.max(0,Math.round((new Date(todayStr())-new Date(e))/86400000));}
+function stardropMet(key){
+  switch(key){
+    case "work200":return S.workItems.filter(function(w){return w.done;}).length>=200;
+    case "pomo100":return S.pomodoros.length>=100;
+    case "workout100":return S.workouts.length>=100;
+    case "review100":return distinctDaysOf(S.reviews)>=100;
+    case "habit365":return S.habitLogs.length>=365;
+    case "fin1000":return S.financeTx.length>=1000;
+    case "days365":return farmAgeDays()>=365;
+    default:return false;
+  }
+}
+function stardropShelfHtml(){
+  var got=STARDROPS.filter(function(d){return S.stardrops[d.key];}).length;
+  var cells=STARDROPS.map(function(d){
+    var date=S.stardrops[d.key];
+    return '<div class="paper-panel" style="padding:10px;text-align:center'+(date?"":";filter:grayscale(.9);opacity:.55")+'"><div style="display:flex;justify-content:center">'+pixIcon(date?"starfruit":"stardropGray",40)+'</div><div class="small" style="font-weight:600;margin-top:4px">'+esc(d.label)+'</div><div class="xs dim" style="margin-top:2px">'+(date?esc(date)+" 获得 · +50 分":"还没拿到")+"</div></div>";
+  }).join("");
+  return '<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 4px;display:flex;align-items:center;gap:8px">'+pixIcon("starfruit",18)+" 星之果实 · 陈列架 "+got+" / "+STARDROPS.length+'</h3><p class="small dim" style="margin:0 0 10px">永久里程碑，达成自动授予，每颗 +50 分，只发一次。</p><div class="grid-cards3">'+cells+"</div></div>";
+}
+/* 收集包与星之果实的发奖检查：只认真实记录，幂等键兜底（账本层合并也去重）。在 render() 里与 junimoEnsureToday 同位调用 */
+function checkSeasonRewards(){
+  var banners=[];var today=todayStr();
+  STARDROPS.forEach(function(d){
+    if(!S.stardrops[d.key]&&stardropMet(d.key)){
+      S.stardrops[d.key]=today;
+      addLedger("points",50,"星之果实："+d.label,today,"stardrop:"+d.key);
+      banners.push({icon:"starfruit",title:"星之果实 · "+d.label,sub:"+50 积分已到账，陈列架在个人简介页",small:false});
+    }
+  });
+  var curKey=seasonKeyOf(today);
+  [curKey,prevSeasonKeyOf(curKey)].forEach(function(k){
+    if(!ledgerHasIdem("bundle:"+k)&&bundleProgressOf(k).complete){
+      addLedger("points",30,"季节收集包："+seasonLabelOf(k),today,"bundle:"+k);
+      banners.push({icon:"star",title:"收集包集齐 · "+seasonLabelOf(k),sub:"祝尼魔在成就图鉴挂上了一颗星 · +30 积分",small:false});
+    }
+  });
+  return banners;
+}
+
+/* ---------- 11. 秘密纸条 ---------- */
+/* 内容池：trivia 均与官方中文 wiki《祝尼魔》《秘密纸条》等条目事实一致（2026-10-22 核对）；whisper 为老乡口吻、署名佚名；tips 均为农场真实功能。 */
+var NOTE_POOL=[
+  {id:"t1",type:"trivia",text:"祝尼魔自称「森林的守护者」，它们住在废弃的社区中心里。"},
+  {id:"t2",type:"trivia",text:"每完成一个收集包，一只祝尼魔就会把包搬进社区中心大厅的祝尼魔小屋。"},
+  {id:"t3",type:"trivia",text:"集齐一个房间的全部收集包后，一只祝尼魔会在墙上放一颗星星，然后一路跟着你，直到你离开社区中心。"},
+  {id:"t4",type:"trivia",text:"所有收集包都完成后，社区中心重建，祝尼魔们会回到森林中去。"},
+  {id:"t5",type:"trivia",text:"法师卖一种叫祝尼魔小屋的建筑。买下后祝尼魔会住进你的农场，自动收获附近成熟的作物。"},
+  {id:"t6",type:"trivia",text:"祝尼魔有自己的文字，是一种替换式密码，游戏文件里专门存了一套祝尼魔字体。"},
+  {id:"t7",type:"trivia",text:"在原版游戏的标题画面上连点树叶 10 次，会有 3 只祝尼魔探出头来挥手。"},
+  {id:"t8",type:"trivia",text:"每个季节的 28 日中午 12 点整，去点鹈鹕镇西北角的灌木丛，能找到一只祝尼魔毛绒玩具。"},
+  {id:"t9",type:"trivia",text:"秘密纸条 #14 提示了一只石祝尼魔藏身的位置。"},
+  {id:"t10",type:"trivia",text:"用弹弓打中祝尼魔，它也不会生气——它不显示反感气泡，只冒一小团爆炸动画。"},
+  {id:"t11",type:"trivia",text:"山姆的 14 心事件里提到，他在给一档叫《欢乐祝尼魔表演》的儿童电视节目制作音乐。"},
+  {id:"t12",type:"trivia",text:"潘妮的卧室里有一本摊开的书，书名是《仙女，祝尼魔和其他寓言》。"},
+  {id:"w1",type:"whisper",text:"下雨天不用给作物浇水。这是我最喜欢下雨的唯一理由。"},
+  {id:"w2",type:"whisper",text:"拍照要站侧光。正午顶光拍人，脸显得比平时大一圈。这条免费送你。"},
+  {id:"w3",type:"whisper",text:"山里的湖边晚上很安静，星星比镇上亮。路过帐篷可以坐下烤烤火。"},
+  {id:"w4",type:"whisper",text:"冬天山上能找到冬山药，雪地里鼓起的小土包别错过。"},
+  {id:"w5",type:"whisper",text:"摩托车的油箱加满那天，我能骑到沙漠边上再回来。这条别告诉罗宾。"},
+  {id:"w6",type:"whisper",text:"镇上海滩的冰淇淋摊只在夏天开。站摊的那小子，你盯着他看他会紧张。"},
+  {id:"w7",type:"whisper",text:"写代码卡住的时候，去湖边站一会儿。回来通常就通了。"},
+  {id:"w8",type:"whisper",text:"向日葵是少数我不嫌弃的农活产物。种上一片，拍照是真的好看。"},
+  {id:"w9",type:"whisper",text:"镇上人扔掉的面包，有时候比商店里卖的还新鲜。这话你没听过。"},
+  {id:"p1",type:"tip",text:"顶栏往下滑会收成细条，金币、积分和同步状态都还在上面。"},
+  {id:"p2",type:"tip",text:"财务页可以导入 iCost 导出的 CSV，旧账也能整本搬进农场。"},
+  {id:"p3",type:"tip",text:"朋友档案里把生日设成农历，每年都会自动换算成公历日期来提醒。"},
+  {id:"p4",type:"tip",text:"工作事项的办理日期和截止日期是两回事：日历上拖动改的是办理日期。"},
+  {id:"p5",type:"tip",text:"心情在每日复盘里选。当天选了低落，悬浮小人们说话都会温和一整天。"},
+  {id:"p6",type:"tip",text:"农场日历有生活和工作两份，从哪个空间进去，看到的就是哪一份。"},
+  {id:"p7",type:"tip",text:"每一笔金币和积分的出处，都能在奖励商店页的账本里翻到。"},
+  {id:"p8",type:"tip",text:"全部数据能在个人简介里导出成 JSON 备份，换设备也不怕。"},
+  {id:"p9",type:"tip",text:"离线时记的东西不会丢，联网后会自动和云端合并，两台设备以新的一条为准。"}
+];
+var NOTE_TYPE_ZH={trivia:"星露谷冷知识",whisper:"老乡悄悄话",tip:"农场贴士"};
+function noteDefOf(id){for(var i=0;i<NOTE_POOL.length;i++)if(NOTE_POOL[i].id===id)return NOTE_POOL[i];return null;}
+function noteEnsureToday(){
+  var today=todayStr();var n=S.notes;var changed=false;
+  if(!n||typeof n!=="object"||Array.isArray(n)){S.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};n=S.notes;changed=true;}
+  if(!Array.isArray(n.found)){n.found=[];changed=true;}
+  if(!Array.isArray(n.cycle)){n.cycle=[];changed=true;}
+  if(n.date!==today){
+    var used={};n.cycle.forEach(function(id){used[id]=1;});
+    var remaining=NOTE_POOL.filter(function(x){return !used[x.id];});
+    if(remaining.length===0){n.cycle=[];remaining=NOTE_POOL.slice();}
+    var pick=remaining[Math.floor(Math.random()*remaining.length)];
+    n.date=today;n.noteId=pick.id;n.cycle.push(pick.id);
+    var jp=null,jc=null;
+    if(S.junimo&&S.junimo.spot){jp=S.junimo.spot.page;jc=S.junimo.spot.corner;}
+    var placed=false;
+    for(var t=0;t<16&&!placed;t++){
+      var pg=JUNIMO_PAGES[Math.floor(Math.random()*JUNIMO_PAGES.length)];
+      var cn=JUNIMO_CORNERS[Math.floor(Math.random()*JUNIMO_CORNERS.length)];
+      if(pg===jp&&cn===jc)continue; /* 与祝尼魔藏点同页同角则换开 */
+      n.page=pg;n.corner=cn;placed=true;
+    }
+    if(!placed){n.page=(jp===JUNIMO_PAGES[0]?JUNIMO_PAGES[1]:JUNIMO_PAGES[0]);n.corner=(jc==="tl"?"tr":"tl");}
+    changed=true;
+  }
+  return changed;
+}
+function noteFoundToday(){
+  var n=S.notes;if(!n||!Array.isArray(n.found))return false;
+  return n.found.some(function(f){return f.date===n.date;});
+}
+function renderNoteLayer(){
+  var root=document.getElementById("secretnote-root");if(!root)return;
+  var n=S.notes;
+  if(!n||!n.noteId||!n.page||n.page!==ui.page||noteFoundToday()||document.body.classList.contains("locked")){root.innerHTML="";return;}
+  root.innerHTML='<button type="button" id="secretnote" data-act="note-open" aria-label="一张秘密纸条" style="'+junimoCornerStyle(n.corner)+'">'+pixIcon("noteSlip",30)+"</button>";
+}
+function openSecretNote(){
+  var n=S.notes;if(!n||!n.noteId||noteFoundToday())return;
+  var def=noteDefOf(n.noteId);if(!def)return;
+  mutate(function(){
+    S.notes.found.push({date:S.notes.date,noteId:S.notes.noteId,uAt:Date.now()});
+    return [];
+  });
+  renderNoteLayer();
+  modal("秘密纸条",
+    '<div style="text-align:center"><div style="display:flex;justify-content:center">'+pixIcon("noteSlip",44)+"</div>"
+    +'<p class="xs dim" style="margin:8px 0 0">'+NOTE_TYPE_ZH[def.type]+" · 已收藏进备忘录</p>"
+    +'<p class="small" style="margin:10px 0 0;white-space:pre-wrap;text-align:left">'+esc(def.text)+"</p>"
+    +(def.type==="whisper"?'<p class="xs dim" style="margin:8px 0 0;text-align:right">——佚名</p>':"")
+    +'<div class="row" style="justify-content:center;margin-top:14px"><button type="button" class="pix-btn pix-btn-green" data-act="modal-close" aria-label="收好纸条">收好</button></div></div>');
+}
+function secretNotesArchiveHtml(){
+  var found=(S.notes&&Array.isArray(S.notes.found))?S.notes.found:[];
+  var sorted=found.slice().sort(function(a,b){return a.date<b.date?1:(a.date>b.date?-1:0);});
+  var inner=sorted.length===0
+    ?'<p class="small dim" style="margin:0">还没找到过纸条。每天有一张藏在某个主页面角落里，找到点开就会收进这里；当天没找到，第二天就作废了。</p>'
+    :'<div class="stack" style="gap:8px">'+sorted.map(function(f){
+        var def=noteDefOf(f.noteId);if(!def)return "";
+        return '<article class="paper-panel" style="padding:10px 12px"><div class="xs dim" style="margin-bottom:4px">'+esc(f.date)+" · "+NOTE_TYPE_ZH[def.type]+'</div><p class="small" style="margin:0;white-space:pre-wrap">'+esc(def.text)+"</p>"+(def.type==="whisper"?'<p class="xs dim" style="margin:4px 0 0;text-align:right">——佚名</p>':"")+"</article>";
+      }).join("")+"</div>";
+  return panel("秘密纸条","scroll",inner);
+}
+
+/* ---------- 12. 节日节气：今日页与日历 ---------- */
+function festivalBannerHtml(date){
+  var f=festivalOf(date);if(!f)return "";
+  return '<div class="wood-sign font-pixel" style="padding:7px 12px;text-align:center;font-size:15px;margin-bottom:12px"><span style="display:inline-flex;align-items:center;gap:8px">'+pixIcon("star",17)+" "+esc(f.name)+'</span></div>';
+}
+function todayFestivalHtml(today){
+  var f=festivalOf(today);if(!f)return "";
+  return panel(f.name,"calendar",'<p class="small" style="margin:0">'+esc(f.fact)+"</p>");
+}
+function winterGiftHtml(today){
+  var md=today.slice(5);
+  if(md<"12-20"||md>"12-25")return "";
+  var list=S.friends.filter(function(fr){return (fr.giftIdeas||"").trim().length>0;}).slice(0,3);
+  if(list.length===0)return "";
+  return panel("冬星盛宴 · 备礼提醒","gift",
+    '<p class="small" style="margin:0 0 8px">12 月 25 日冬星盛宴，朋友档案里这几位记了送礼想法：</p>'
+    +list.map(function(fr){return '<div class="small" style="display:flex;align-items:center;gap:8px;padding:2px 0">'+storedIcon(fr.avatar,20,"farmer")+"<span><b>"+esc(fr.name)+"</b> · "+esc(fr.giftIdeas)+"</span></div>";}).join(""));
+}
+/* 今日页四季轻氛围：复用天气特效的小元素视觉语言（色点轻浮动），reduced-motion 时静止 */
+function seasonAmbienceHtml(today){
+  var s=seasonOf(today);
+  var col=s.season==="春"?"#f28bb4":s.season==="夏"?"#ffd83d":s.season==="秋"?"#d9762e":"#a8d8f0";
+  var h='<div class="season-amb" aria-hidden="true">';
+  for(var i=0;i<8;i++){
+    h+='<span style="left:'+(4+((i*13)%92))+'%;background:'+col+';animation-delay:-'+(i*0.7).toFixed(1)+'s;transform:rotate('+((i*23)%50-25)+'deg)"></span>';
+  }
+  return h+"</div>";
+}
+
 function renderHud(){
   var today=todayStr();var s=seasonOf(today);
   var my=S.todos.filter(function(t){return t.date===today;});
@@ -2455,6 +2790,7 @@ function lifePage(){
   var monthExpense=monthTx.filter(function(t){return t.kind==="expense";}).reduce(function(a,t){return a+t.amountCents;},0);
   var h='<div class="stack">';
   h+='<div class="wood-sign font-pixel" style="padding:8px 12px;text-align:center;font-size:18px"><span style="display:inline-flex;align-items:center;gap:8px">'+pixIcon(s.icon,20)+" "+s.season+"季 "+s.day+" 日 · 星期"+weekdayOf(today)+" · "+today+"</span></div>";
+  h+=seasonAmbienceHtml(today);
   /* 今天先做这三件（生活首页）：只取今日未完成的生活待办，工作事务不混进来（工作侧同款小块在今日工作页顶部）；仅聚合展示，不存第二份数据 */
   var focusList=[];
   my.forEach(function(t){if(!t.done)focusList.push({type:"todo",id:t.id,title:t.text,due:today,est:0,meta:"今日待办"});});
@@ -2484,6 +2820,7 @@ function lifePage(){
       return '<div class="small" style="display:flex;align-items:center;gap:8px;padding:2px 0">'+storedIcon(f.avatar,20,"farmer")+"<span>还有 "+nb.daysLeft+" 天 · "+dp[1]+" 月 "+dp[2]+" 日 是 "+esc(f.name)+" 的生日（公历）</span></div>";
     }).join(""));
   }
+  h+=todayFestivalHtml(today); h+=winterGiftHtml(today);
   h+='<div class="row wrap" role="group" aria-label="今日小牌">'
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">待办 '+done+"/"+my.length+"</span>"
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">工作到期 '+dueWork.length+"</span>"
@@ -3143,6 +3480,7 @@ function calMonthHtml(space,focus){
     +'<div class="cal-grid">'+cells.map(function(date,i){
       if(!date)return '<div key="e'+i+'"></div>';
       var parts=[],dot=false,chick="";
+      var fest=festivalOf(date);
       if(space==="work"){
         var planN=S.workItems.filter(function(w){return !w.done&&planDayOf(w)===date;}).length;
         var dueN=S.workItems.filter(function(w){return !w.done&&w.dueDate===date;}).length;
@@ -3157,7 +3495,7 @@ function calMonthHtml(space,focus){
         if(cyN){parts.push("到期 "+cyN);dot=true;}
       }
       return '<button type="button" class="cal-cell cal-mcell'+(date===today?" today":"")+'" data-act="cal-day" data-date="'+date+'" aria-label="'+date+'，点击查看这一天">'
-        +'<span style="display:flex;align-items:center;gap:4px"><span class="font-num" style="font-size:11px;line-height:1">'+Number(date.slice(8))+"</span>"+(dot?'<span class="cal-dot" aria-hidden="true"></span>':"")+"</span>"
+        +'<span style="display:flex;align-items:center;gap:4px"><span class="font-num" style="font-size:11px;line-height:1">'+Number(date.slice(8))+"</span>"+(dot?'<span class="cal-dot" aria-hidden="true"></span>':"")+(fest?'<span class="fest-mark" title="'+esc(fest.name)+'">'+pixIcon(fest.term?"leaf":"star",11)+"</span>":"")+"</span>"
         +chick
         +(parts.length?'<span class="xs" style="color:#7a5a2a;line-height:1.3">'+parts.join(" · ")+"</span>":"")
         +"</button>";
@@ -3176,7 +3514,7 @@ function calDayLifeHtml(date){
   todos.forEach(function(t){arrange+=calTodoRowHtml(t,false);});
   cycles.forEach(function(c){arrange+=calCycleRowHtml(c);});
   if(anchors.length>0)arrange+='<div style="margin-top:8px">'+anchorChecklistHtml(date)+"</div>"+calExerciseRowsHtml(date);
-  var h=panel("安排 · "+fmtMD(date)+" 周"+weekdayOf(date),"pin",arrange);
+  var h=festivalBannerHtml(date)+panel("安排 · "+fmtMD(date)+" 周"+weekdayOf(date),"pin",arrange);
   /* 记录区：只呈现这一天真实发生的记录，勾选上面的安排不会在这里生成任何东西 */
   var doneTodos=todos.filter(function(t){return t.done;});
   var logs=S.studyLogs.filter(function(l){return l.date===date;});
@@ -3213,7 +3551,7 @@ function calDayWorkHtml(date){
     arrange+='<div class="small" style="font-weight:600;margin:10px 0 4px">当天已办结</div>';
     donePlan.forEach(function(w){arrange+=calWorkRowHtml(w,date,false);});
   }
-  var h=panel("办理安排 · "+fmtMD(date)+" 周"+weekdayOf(date),"board",arrange);
+  var h=festivalBannerHtml(date)+panel("办理安排 · "+fmtMD(date)+" 周"+weekdayOf(date),"board",arrange);
   var dueHtml=dueOnly.length===0
     ?'<p class="small dim" style="margin:0">这一天没有「截止在这天、但安排在别天办理」的事项。</p>'
     :dueOnly.map(function(w){return calWorkRowHtml(w,date,false);}).join("");
@@ -3396,6 +3734,7 @@ function memoPage(){
         +'<div class="row" style="margin-top:8px"><button type="button" class="pix-btn pix-btn-ghost" data-act="memo-edit" data-id="'+n.id+'" aria-label="编辑 '+esc(n.title)+'">编辑</button>'
         +'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="memo-del" data-id="'+n.id+'" aria-label="删除 '+esc(n.title)+'">删除</button></div></article>';
       }).join("")+"</div>"));
+  h+=secretNotesArchiveHtml();
   h+="</div>";
   return h;
 }
@@ -4116,7 +4455,7 @@ function rewardConfirmModal(r){
 /* ============ 成就图鉴 ============ */
 function achievementsPage(){
   var unlockedN=ACHIEVEMENTS.filter(function(a){return S.unlocked[a.key];}).length;
-  return '<div class="stack">'+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
+  return '<div class="stack">'+bundlePanelHtml()+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
     '<div class="grid-cards3">'+ACHIEVEMENTS.map(function(a){
       var un=!!S.unlocked[a.key];
       return '<article class="paper-panel" style="padding:12px;text-align:center'+(un?"":";filter:grayscale(.9);opacity:.6")+'"><div style="display:flex;justify-content:center">'+pixIcon(un?a.icon:"lock",38)+'</div><h3 class="font-pixel" style="margin:4px 0 0">'+esc(a.name)+'</h3><p class="xs" style="margin:4px 0 0">'+esc(a.desc)+'</p><p class="font-num" style="font-size:10px;margin:4px 0 0">+'+a.points+" 分</p>"
@@ -4201,6 +4540,7 @@ function profilePage(){
     +'<div class="row wrap"><button type="button" class="pix-btn" data-act="export-data" aria-label="导出全部数据（JSON）"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("save",15)+" 导出全部数据（JSON）</span></button>"
     +'<input type="file" id="import-file" accept=".json,application/json" style="display:none" aria-label="选择要导入的 JSON 备份文件">'
     +'<button type="button" class="pix-btn pix-btn-blue" data-act="import-data" aria-label="导入恢复（JSON）"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("inbox",15)+" 导入恢复（JSON）</span></button></div></div></div>";
+  h+=stardropShelfHtml();
   return h;
 }
 function profileEditorModal(){
@@ -4480,9 +4820,14 @@ function render(){
   document.body.dataset.skin=S.profile.activeSkin||"default";
   if(ensureCycleSupply())save();
   if(junimoEnsureToday())save();
+  if(noteEnsureToday())save();
+  if(!document.body.classList.contains("locked")){
+    var seasonRewardBanners=checkSeasonRewards();
+    if(seasonRewardBanners.length){save();pushBanners(seasonRewardBanners);}
+  }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
-  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();
+  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();renderNoteLayer();
   if(keepScroll)window.scrollTo(0,y);
   restoreEditState(cap);
   lastRenderPage=ui.page;
@@ -4542,6 +4887,7 @@ document.addEventListener("click",function(e){
     case "banner-close":bannerQueue.shift();renderBanner();break;
     case "junimo-catch":catchJunimo();break;
     case "junimo-pet":junimoPetWave();break;
+    case "note-open":openSecretNote();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
     /* 待办 */
