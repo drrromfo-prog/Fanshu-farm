@@ -192,7 +192,8 @@
       body.locked > header, body.locked > .shell, body.locked #companion-root{visibility:hidden;}
       .scroll-thin::-webkit-scrollbar{height:6px;width:6px;}
       .scroll-thin::-webkit-scrollbar-thumb{background:#6b3f1d;}
-      .banner-slot{position:fixed;left:0;right:0;top:calc(68px + env(safe-area-inset-top,0px));z-index:70;display:flex;justify-content:center;pointer-events:none;padding:0 12px;}
+      /* 轻提示统一容器：top 跟随 HUD 实测高度（--hud-h 由 syncHudVar 按展开/收起两态实时写入，含安全区），恒在顶栏下方 8px 完整显示 */
+      .banner-slot{position:fixed;left:0;right:0;top:calc(var(--hud-h,calc(68px + env(safe-area-inset-top,0px))) + 8px);z-index:70;display:flex;justify-content:center;pointer-events:none;padding:0 12px;}
       .banner-card{pointer-events:auto;display:flex;align-items:stretch;text-align:left;padding:0;overflow:hidden;width:min(430px,94vw);cursor:pointer;font-family:inherit;color:var(--text);}
       #companion{position:fixed;z-index:40;touch-action:none;}
       .bubble{background:#fff6da;border:2px solid #4a2c14;box-shadow:3px 3px 0 rgba(46,26,8,.45);border-radius:3px;position:absolute;width:256px;padding:12px;}
@@ -1465,6 +1466,7 @@ function renderBanner(){
   if(b&&document.body.classList.contains("locked")){root.innerHTML="";return;}
   if(bannerTimer){clearTimeout(bannerTimer);bannerTimer=null;}
   if(!b){root.innerHTML="";return;}
+  syncHudVar(); /* 弹出前按当前 HUD 态（展开/收起）重新量一次高度，提示恒完整可见 */
   root.innerHTML='<div class="banner-slot"><button type="button" class="wood-panel banner-card bannerdown" data-act="banner-close" aria-label="关闭提示：'+esc(b.title)+'">'
     +'<span class="banner-badge" style="width:'+(b.small?46:60)+'px">'+pixIcon(b.icon,b.small?26:38)+'</span>'
     +'<span style="flex:1;padding:'+(b.small?"8px 12px":"10px 12px")+'"><span class="font-pixel" style="display:block;font-size:'+(b.small?14:16)+'px">'+esc(b.title)+'</span>'
@@ -2192,6 +2194,129 @@ var NEWS_EMPTY_DAYTIME={
  haley:"到现在还没有新动态。今天的相机，还没开机。",
  linus:"今天还没留下记录。山里安静，日子也安静。"
 };
+/* ============ 收工闲谈·人物点评（晚间档专属）：说话人按日期种子轮换（多端一致），内容由当天真实数据驱动 ============ */
+var REVIEWERS=["sebastian","haley","linus","pelican"];
+var REVIEWER_NAMES={sebastian:"塞巴斯蒂安",haley:"海莉",linus:"莱纳斯",pelican:"记者鹈鹕（本鸟）"};
+/* 场景判定优先级：quiet（零活动）> clear（全清）> overdue（有逾期）> busy（办结多）> expense（支出偏高）> workout（有运动）> normal。
+   句中 {token} 全部来自当天真实记录；引用了某 token 的句子只有在该数据存在时才入选（见 buildNewsReview 的 avail 过滤），禁止无数据空泛句。 */
+var REVIEW_LINES={
+ sebastian:{
+  clear:["全清。{doneAll} 件，一件不剩。……行吧，今天准你早点收工，我也要回地下室了。","清单见底了。连我都挑不出刺——这种日子，一年没几天。","全清，还连着 {streak} 天了？别得意，明天接着来。"],
+  busy:["办了 {doneAll} 件。你是把明天的活也顺手干了？","「{topWork}」交差了。镇长欠你一句谢谢——他不说，我替他记着。","产量 {doneAll} 件。……鞋底磨薄了没？回去泡个脚。"],
+  overdue:["先说难听的：还有 {overdue} 件过期的挂着。办是办了不少，尾巴也别拖太久。","{overdue} 件逾期在那儿瞪着你呢。明天第一件事，先清它们。"],
+  expense:["今天花了 ¥{expense}。最大一笔是{bigItem}，¥{bigYuan}。……你的钱包，我替它叹口气。","¥{expense} 出去了。{bigItem}占了大头。买都买了，别回头心疼。"],
+  workout:["动了 {minutes} 分钟。行，算你今天没全程瘫着。","运动 {minutes} 分钟。汗流了，话也别多说了，洗澡去。"],
+  quiet:["今天什么都没记。也行，我的地下室也常年没新闻。","零记录。本台唯一的消息是：没有消息。……挺好。"],
+  normal:["办了 {doneAll} 件。不多不少，日子照常转。","今天就这些记录。……不坏。明天见。"]},
+ haley:{
+  clear:["全清！{doneAll} 件全部搞定。今天这张「完工照」，值得存档。","一件不剩，全办完了。哼，状态不错嘛——这句是夸你，别飘。","连着 {streak} 天全清？这自律，我愿意给你打光。"],
+  busy:["{doneAll} 件！跑这么多趟，腿还好吗？回去记得敷面膜犒劳一下。","「{topWork}」都交差了。今天的你，效率高得有点不像你。","忙成这样还一件没落。今天满分，不许反驳。"],
+  overdue:["先泼个冷水：{overdue} 件过期的还挂着呢。美归美，尾巴得收干净。","{overdue} 件逾期。明天先处理它们，再忙别的——顺序很重要。"],
+  expense:["今天花了 ¥{expense}，大头是{bigItem}（¥{bigYuan}）。……眼光是真不错，钱包也是真瘪了。","¥{expense}。{bigItem}这种东西，买之前可没见你犹豫。行吧，开心就好。"],
+  workout:["运动了 {minutes} 分钟。出汗的样子，比瘫着好看多了。","{minutes} 分钟。今天的光线和你的状态，都在线。"],
+  quiet:["今天一张照片都没存。也行，有些日子就是只适合用眼睛过。","零记录的一天。本姑娘宣布：今天放假，不接受反驳。"],
+  normal:["办了 {doneAll} 件。节奏刚刚好，不慌不忙。","今天的记录都存好了。不好不坏，稳稳的一天。"]},
+ linus:{
+  clear:["全清了。{doneAll} 件，一件件都落了地。这样的日子，适合早点睡，看星星。","清单空了，心也该空一空。剩下的时间，留给热汤和夜晚。","{streak} 天连着全清。山里的树也是一天一天长的，你做得很好。"],
+  busy:["{doneAll} 件办完。忙归忙，件件有回音，这就很好。","「{topWork}」交了差。跑腿的日子辛苦，回来喝碗热的。","今天走的路不少。坐下来歇歇，山风会把疲乏带走的。"],
+  overdue:["还有 {overdue} 件过期的没办。别急，明天太阳升起来，一件一件来。","{overdue} 件挂着。拖着的事像没化的雪，先晒一晒，明天动手。"],
+  expense:["今天支出 ¥{expense}，最大一笔是{bigItem}，¥{bigYuan}。钱花出去，换回日子，也算有去处。","¥{expense}。花钱的日子也是日子。记下这一笔，心里有数就好。"],
+  workout:["动了 {minutes} 分钟。身体是自己的帐篷，得时常撑一撑。","运动 {minutes} 分钟。出出汗，晚上睡得香。"],
+  quiet:["今天什么都没记。帐篷外的星星，一颗没少。","安静的一天。山里常有这样的日子，风过了，也就过了。"],
+  normal:["办了 {doneAll} 件。日子有痕迹，就够了。","今天的记录摆在这儿。不多不少，正好是一天。"]},
+ pelican:{
+  clear:["本台快讯：今日事项全线告清，共 {doneAll} 件，无一遗漏。本台记者表示——难得。","头条：全清。{done}/{total} 件待办全数办妥，收工时间提前，本台准时下班。","连续全清 {streak} 天。本台提醒：状态正热，别断更。"],
+  busy:["本台统计：今日办成 {doneAll} 件。本台记者跟拍一天，镜头都拍热了。","头条：「{topWork}」已交差。今日要事办妥，本台予以置顶报道。","快讯：{doneAll} 件事项同日办结。本台评价：高效，且略显卷。"],
+  overdue:["本台提醒：仍有 {overdue} 件事项逾期未办。成绩单再好看，这一行也是红的。","跟进报道：{overdue} 件过期事项继续挂账。本台将持续关注——明天头条见分晓。"],
+  expense:["财经快讯：今日支出 ¥{expense}，最大单笔为{bigItem}，¥{bigYuan}。本台评论：出手阔绰，账本诚实。","本台核计：今日出账 ¥{expense}。其中{bigItem}一笔独占 ¥{bigYuan}，堪称今日头条。"],
+  workout:["体育频道：今日运动 {minutes} 分钟。本台记者试跟跑了一段，宣布放弃。","健康快讯：运动 {minutes} 分钟已记录在案。本台提醒观众：贵在坚持。"],
+  quiet:["本台讯：今日无事发生。本台记者（鹈鹕本鸟）已提前下班——这样的日子，也是日子。","今日版面空白。本台声明：不是偷懒，是真的没有新闻。"],
+  normal:["本台小结：今日办成 {doneAll} 件。无大事发生，日子平稳运行。","日常播报：{doneAll} 件事项办妥。本台照例记录在案，散会。"]}
+};
+/* 低落日温和池：当天心情属 LOW_MOODS 时四位全体只从此出句（与小人温和门同一判定），毒舌句禁用 */
+var REVIEW_GENTLE={
+ sebastian:{
+  clear:["全清了，{doneAll} 件。……做得不错。剩下的时间，歇着吧。","一件没剩。今天，就到这儿，不用再想了。"],
+  busy:["办了 {doneAll} 件。够多了。剩下的，明天再说。","今天很满。……回去躺着吧，别的都放放。"],
+  overdue:["还有 {overdue} 件挂着。没事，明天再处理，今天先歇。","逾期的那 {overdue} 件跑不掉的。不急，先顾好自己。"],
+  expense:["今天花了 ¥{expense}。记上了，就翻篇吧。","支出 ¥{expense}，最大一笔{bigItem}。花了就花了，别多想。"],
+  workout:["动了 {minutes} 分钟。这样就很好。","运动 {minutes} 分钟。辛苦了，洗个热水澡吧。"],
+  quiet:["今天没留下记录。也行，不是每天都得有新闻。","安安静静的一天。……我陪你一起安静。"],
+  normal:["办了 {doneAll} 件。今天，就这样吧。","记录都在这儿了。早点休息。"]},
+ haley:{
+  clear:["全清啦，{doneAll} 件。今天的你，很能干。","一件不剩。好了，不许再忙了，去放松。"],
+  busy:["{doneAll} 件办完。今天真的辛苦了，剩下的交给明天。","忙了一天。面膜敷上，什么都别想了。"],
+  overdue:["{overdue} 件还挂着。没关系，明天处理，今天先好好休息。","逾期的先放一放。你比清单重要。"],
+  expense:["今天花了 ¥{expense}。花了就花了，开心最重要。","¥{expense}，最大一笔是{bigItem}。记好了，翻篇。"],
+  workout:["运动了 {minutes} 分钟。状态在慢慢回来，不着急。","{minutes} 分钟，够啦。出汗之后，整个人都会松一点。"],
+  quiet:["今天没有记录。也很好，日子留白也是日子。","一张没拍。眼睛看过的风景，也算数。"],
+  normal:["办了 {doneAll} 件。稳稳的，这样就好。","今天就到这儿。洗个热水澡，早点睡。"]},
+ linus:{
+  clear:["全清了。{doneAll} 件都落了地。今晚，可以睡个整觉。","清单空了。热汤喝完，早点歇。"],
+  busy:["{doneAll} 件办完。忙了一天了，坐下来，看看天。","今天很满。剩下的事，山里的风会先替你放着。"],
+  overdue:["{overdue} 件还没办。没关系，日子还长，明天一件一件来。","挂着的事跑不掉。今晚，先把自己照顾好。"],
+  expense:["今天支出 ¥{expense}。钱来钱去，日子照过，心里有数就好。","¥{expense} 记下了。花出去的，换回了今天。"],
+  workout:["动了 {minutes} 分钟。身体暖起来，心也会跟着暖。","运动 {minutes} 分钟。今晚会睡得沉一些。"],
+  quiet:["今天什么都没记。星星一颗没少，你也好好歇着。","安静的一天。这样的日子，是给人回气的。"],
+  normal:["办了 {doneAll} 件。有痕迹，就很好。","今天到这儿。慢慢来，日子还长。"]},
+ pelican:{
+  clear:["本台快讯：今日全清，{doneAll} 件办妥。本台记者（鹈鹕本鸟）宣布：今晚不加班，陪你一起收工。","头条：全清。本台评价——做得好，剩下的时间归你自己。"],
+  busy:["本台统计：今日办成 {doneAll} 件。辛苦了，本台今晚只报好消息。","快讯：{doneAll} 件落定。本台记者已下班，你也请吧。"],
+  overdue:["本台提醒：还有 {overdue} 件待办。本台态度——不催，明日再跟进。","跟进：{overdue} 件挂着。今晚先放下，本台陪你明天再战。"],
+  expense:["财经快讯：今日支出 ¥{expense}。本台评论：记清楚了，就安心了。","本台核计：出账 ¥{expense}，最大一笔{bigItem}。播报完毕，早点休息。"],
+  workout:["体育频道：运动 {minutes} 分钟。本台点评：很好，今晚睡个好觉。","健康快讯：{minutes} 分钟已记录。本台祝你晚安。"],
+  quiet:["本台讯：今日无事发生。记者（鹈鹕本鸟）已下班——安静的日子，也是好日子。","今日无新闻。本台与你一起，安安静静收工。"],
+  normal:["本台小结：今日办成 {doneAll} 件。平稳的一天，播报完毕。","日常播报：{doneAll} 件办妥。本台照例存档，晚安。"]}
+};
+function newsReviewFacts(date,n){
+  var doneAll=n.todosDone+n.workDoneTitles.length;
+  var closedBy=function(w){return w.done&&w.doneDate&&w.doneDate<=date;};
+  var overdueWork=S.workItems.filter(function(w){return w.dueDate&&w.dueDate<date&&!closedBy(w);}).length;
+  var overdueTodos=S.todos.filter(function(t){return t.date<date&&!t.done;}).length;
+  var scopeWork=S.workItems.filter(function(w){return w.stage==="active"&&w.dueDate&&w.dueDate<=date;});
+  var scopeOpen=scopeWork.filter(function(w){return !closedBy(w);}).length;
+  var allClear=(n.todosTotal+scopeWork.length)>0&&n.todosDone===n.todosTotal&&scopeOpen===0;
+  var bigItem="",bigCents=0;
+  S.financeTx.forEach(function(t){if(t.date===date&&t.kind==="expense"&&t.amountCents>bigCents){bigCents=t.amountCents;bigItem=t.title||t.category||"一笔支出";}});
+  var prevTotal=0;
+  S.financeTx.forEach(function(t){if(t.kind==="expense"&&t.date<date&&t.date>=shiftDate(date,-30))prevTotal+=t.amountCents;});
+  var expenseHigh=n.expenseYuan>0&&(n.expenseYuan>=300||(prevTotal>0&&n.expenseYuan>=100&&n.expenseYuan>=2*(prevTotal/100/30)));
+  var clearDays={};S.ledger.forEach(function(l){if(l.reason==="今日全清奖励")clearDays[l.date]=true;});
+  var streak=0,dd=date;while(clearDays[dd]){streak++;dd=shiftDate(dd,-1);}
+  var busy=n.workDoneTitles.length>=2||doneAll>=5;
+  var scene=!n.hasActivity?"quiet":allClear?"clear":(overdueWork+overdueTodos)>0?"overdue":busy?"busy":expenseHigh?"expense":n.workoutMinutes>0?"workout":"normal";
+  return{done:n.todosDone,total:n.todosTotal,doneAll:doneAll,workN:n.workDoneTitles.length,
+    topWork:n.workDoneTitles.length?n.workDoneTitles[0]:"",overdue:overdueWork+overdueTodos,
+    expense:n.expenseYuan,bigItem:bigItem,bigYuan:bigCents/100,minutes:n.workoutMinutes,
+    habitN:n.habitChecks,studyN:n.studyCount,gold:n.goldDelta,points:n.pointsDelta,streak:streak,scene:scene};
+}
+function reviewFmtYuan(v){return String(Math.round(v*100)/100);}
+function buildNewsReview(date,n,low){
+  var f=newsReviewFacts(date,n);
+  var ch=REVIEWERS[newsHash(date+"|reviewer")%REVIEWERS.length];
+  var poolSet=low?REVIEW_GENTLE:REVIEW_LINES;
+  var pool=(poolSet[ch]&&poolSet[ch][f.scene])||poolSet[ch].normal;
+  var avail=function(tok){
+    if(tok==="topWork")return !!f.topWork;
+    if(tok==="bigItem"||tok==="bigYuan")return !!f.bigItem;
+    if(tok==="streak")return f.streak>0;
+    if(tok==="gold"||tok==="points")return f.gold!==0||f.points!==0;
+    if(tok==="habitN")return f.habitN>0;
+    if(tok==="studyN")return f.studyN>0;
+    return true;};
+  var eligible=pool.filter(function(line){var toks=line.match(/\{[a-zA-Z]+\}/g)||[];return toks.every(function(t){return avail(t.slice(1,-1));});});
+  if(!eligible.length)eligible=pool;
+  var text=eligible[newsHash(date+"|review|"+f.scene)%eligible.length];
+  var rep={done:f.done,total:f.total,doneAll:f.doneAll,workN:f.workN,topWork:f.topWork,overdue:f.overdue,
+    expense:reviewFmtYuan(f.expense),bigItem:f.bigItem,bigYuan:reviewFmtYuan(f.bigYuan),minutes:f.minutes,
+    habitN:f.habitN,studyN:f.studyN,gold:(f.gold>=0?"+":"")+f.gold,points:(f.points>=0?"+":"")+f.points,streak:f.streak};
+  Object.keys(rep).forEach(function(k){text=text.split("{"+k+"}").join(String(rep[k]));});
+  return{char:ch,name:REVIEWER_NAMES[ch],scene:f.scene,text:text};
+}
+function reviewAvatarHtml(ch,size){
+  if(ch==="pelican")return '<span class="banner-badge" style="width:'+size+'px;height:'+size+'px">'+pixIcon("news",Math.round(size*0.62))+"</span>";
+  return spriteWithAcc(ch,size);
+}
 function newsHash(str){var h=0;for(var i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))|0;return Math.abs(h);}
 function newsMoodLow(date){var m=null;S.moods.forEach(function(x){if(x.date===date)m=x;});return !!(m&&LOW_MOODS[m.mood]);}
 /* 组装一份报道快照：items=条目摘要，comment=人物评论（说话人+文本），goldDelta/pointsDelta=当日收支（hasFlow 为假时不显示收支行） */
@@ -2235,7 +2360,8 @@ function buildNewsSnapshot(date,mode){
   else if(low){var gp=NEWS_LINES.gentle[ch];text=gp[seed%gp.length];}
   else{var pool=(NEWS_LINES[mode]&&NEWS_LINES[mode][ch])?NEWS_LINES[mode][ch]:NEWS_LINES.evening[ch];text=pool[seed%pool.length];}
   if(mode==="daytime"&&hasAct)text=text.split("{fact}").join(fact||"今天有了新记录");
-  return{date:date,mode:mode,items:items,hasActivity:hasAct,
+  var review=(mode==="evening")?buildNewsReview(date,n,low):null;
+  return{date:date,mode:mode,items:items,hasActivity:hasAct,review:review,
     comment:{char:ch,name:NEWS_CHAR_NAMES[ch],text:text},
     goldDelta:n.goldDelta,pointsDelta:n.pointsDelta,
     hasFlow:S.ledger.some(function(l){return l.date===date;}),
@@ -2245,8 +2371,8 @@ function findNewsDay(date){for(var i=0;i<S.newsDays.length;i++)if(S.newsDays[i].
 function upsertNewsDay(snap){
   var old=findNewsDay(snap.date);
   if(old){
-    var same=JSON.stringify([old.mode,old.items,old.comment,old.goldDelta,old.pointsDelta,old.hasFlow,old.finalized])
-      ===JSON.stringify([snap.mode,snap.items,snap.comment,snap.goldDelta,snap.pointsDelta,snap.hasFlow,snap.finalized]);
+    var same=JSON.stringify([old.mode,old.items,old.comment,old.review,old.goldDelta,old.pointsDelta,old.hasFlow,old.finalized])
+      ===JSON.stringify([snap.mode,snap.items,snap.comment,snap.review,snap.goldDelta,snap.pointsDelta,snap.hasFlow,snap.finalized]);
     if(same)return false;
     snap.uAt=Date.now();
     S.newsDays[S.newsDays.indexOf(old)]=snap;
@@ -2853,6 +2979,12 @@ function newsSectionHtml(){
   }
   if(snap.comment&&snap.comment.text){
     h+='<div style="margin-top:16px;padding:12px;background:#fdf3c9;border:2px dashed #b99b62"><span class="font-pixel" style="font-size:13px;color:#2c4a73">'+esc(snap.comment.name||"")+' 说：</span><span class="text-sm">'+esc(snap.comment.text)+"</span></div>";
+  }
+  if(snap.review&&snap.review.text){
+    h+='<div style="margin-top:12px;padding:12px;background:#fdf3c9;border:2px dashed #b99b62;display:flex;gap:10px;align-items:flex-start">'
+      +reviewAvatarHtml(snap.review.char,44)
+      +'<div style="flex:1"><span class="font-pixel" style="font-size:13px;color:#2c4a73">收工点评 · '+esc(snap.review.name)+'</span>'
+      +'<p class="text-sm" style="margin:4px 0 0;line-height:1.7">'+esc(snap.review.text)+"</p></div></div>";
   }
   h+="</div></div>";
   return h;
@@ -4837,6 +4969,13 @@ function render(){
    只切 class、不触发 render，不干扰 render() 的滚动位置保留；状态挂在 header/body 上，renderHud 重绘不丢。 */
 var hudSlimState=false;
 var hudHeaderEl=document.querySelector(".app-header");
+/* 把 HUD 实测高度（offsetHeight 已含安全区 padding）写进 --hud-h，轻提示容器据此定位，展开/收起两态都不会被顶栏压住 */
+function syncHudVar(){
+  if(!hudHeaderEl)hudHeaderEl=document.querySelector(".app-header");
+  if(!hudHeaderEl)return;
+  var h=hudHeaderEl.offsetHeight;
+  if(h>0)document.documentElement.style.setProperty("--hud-h",h+"px");
+}
 function hudOnScroll(){
   if(!hudHeaderEl)hudHeaderEl=document.querySelector(".app-header");
   if(!hudHeaderEl)return;
@@ -4845,13 +4984,19 @@ function hudOnScroll(){
     hudSlimState=true;
     hudHeaderEl.classList.add("hud-slim");
     document.body.classList.add("hud-slim");
+    syncHudVar();setTimeout(syncHudVar,380);
   }else if(hudSlimState&&y<=6){
     hudSlimState=false;
     hudHeaderEl.classList.remove("hud-slim");
     document.body.classList.remove("hud-slim");
+    syncHudVar();setTimeout(syncHudVar,380);
   }
 }
 window.addEventListener("scroll",hudOnScroll,{passive:true});
+window.addEventListener("resize",syncHudVar);
+window.addEventListener("orientationchange",function(){syncHudVar();setTimeout(syncHudVar,380);});
+if(hudHeaderEl)hudHeaderEl.addEventListener("transitionend",syncHudVar);
+syncHudVar();
 
 /* ============ 事件委托 ============ */
 function toastShop(msg){ui.shopMsg=msg;}
