@@ -1101,15 +1101,18 @@ function checkAchievements(){
   });
   return fresh;
 }
-/* 今日范围（单一口径）：今日待办 + 已接取（stage=active）且 dueDate<=今日 的未完成工作事项。
+/* 今日范围（单一口径）：今日待办 + 已接取（stage=active）且 dueDate<=今日 的工作事项。
+   work 是其中未完成的列表（全清判定与今日页待办列表用）；total/done 按 workAll（不论完成与否）计，办完工作事项进度也要涨。
    顶栏进度、今日进度条、全清判定与全清奖励全部共用这一个函数。
    全清不含习惯、不含锚点：习惯是长期浇灌，锚点在今日页单独显示进度，都不进全清分母。 */
 function todayScope(){
   var today=todayStr();
   var todos=S.todos.filter(function(t){return t.date===today;});
   var work=S.workItems.filter(function(w){return !w.done&&w.stage==="active"&&w.dueDate&&w.dueDate<=today;});
+  var workAll=S.workItems.filter(function(w){return w.stage==="active"&&w.dueDate&&w.dueDate<=today;});
+  var workDone=workAll.filter(function(w){return w.done;});
   var todosDone=todos.filter(function(t){return t.done;}).length;
-  return{todos:todos,work:work,todosDone:todosDone,total:todos.length+work.length,done:todosDone};
+  return{todos:todos,work:work,workAll:workAll,workDone:workDone,todosDone:todosDone,total:todos.length+workAll.length,done:todosDone+workDone.length};
 }
 /* 今日全清：今日范围内的事全办完（至少一项）+20 G，每日一次 */
 function checkDayClear(){
@@ -2182,9 +2185,9 @@ function navGroups(iconOnly){
       +(iconOnly?"":'<div class="font-pixel nav-group-title">'+title+"</div>")
       +items.map(function(n){return navButton(n,iconOnly);}).join("")+"</div>";
   }
-  /* 日历入口：挂在生活/工作空间切换控件下方，不进导航模块表，两个空间下都显示，跟随进入时的空间 */
+  /* 日历入口：排在所有空间组之前单独成行，不进导航模块表，两个空间下都显示，跟随进入时的空间 */
   var calBtn='<div style="padding:4px"><button type="button" class="nav-btn'+(ui.page==="calendar"?" active":"")+(iconOnly?" icononly":"")+'" data-act="go" data-page="calendar" aria-label="日历" title="日历">'+pixIcon("calendar",22)+(iconOnly?"":'<span style="white-space:nowrap">日历</span>')+"</button></div>";
-  return group("生活空间",LIFE_NAV,lifeActive)+fenceHtml()+group("工作空间",WORK_NAV,workActive)+calBtn+fenceHtml()+group("工具箱",TOOLBOX_NAV,false);
+  return calBtn+fenceHtml()+group("生活空间",LIFE_NAV,lifeActive)+fenceHtml()+group("工作空间",WORK_NAV,workActive)+fenceHtml()+group("工具箱",TOOLBOX_NAV,false);
 }
 function sidebarBrand(iconOnly){
   return '<div style="margin-bottom:8px"><div class="wood-sign font-pixel" style="text-align:center;padding:'+(iconOnly?"6px 2px":"8px 6px")+';font-size:'+(iconOnly?13:19)+'px" aria-label="番鼠农场">'+(iconOnly?"番":"番鼠农场")+"</div>"
@@ -2993,7 +2996,7 @@ function calMonthHtml(space,focus){
         +"</button>";
     }).join("")+"</div>";
   var gridPanel=panel(yy+" 年 "+mm+" 月","calendar",grid);
-  if(space!=="life")return gridPanel;
+  if(space!=="life")return gridPanel+calWorkStatsHtml();
   /* 生活月视图：月历网格（格子里的小鸡只作心情标记） + 回顾统计；心情打卡已搬进每日复盘 */
   return gridPanel+calStatsHtml();
 }
@@ -3120,6 +3123,63 @@ function calStatsHtml(){
     +dailyStats.map(function(d){
       return '<tr><td class="font-pixel" style="white-space:nowrap">'+d.date.slice(5)+" 周"+weekdayOf(d.date)+(d.date===today?' <span class="pix-tag pix-tag-green">今</span>':"")+"</td>"
         +"<td>"+d.done+"/"+d.total+"</td><td>"+(d.pomos?d.pomos:"—")+"</td><td>"+(d.wmin?d.wmin:"—")+"</td><td>"+(d.gold?"+"+d.gold+" G":"—")+"</td></tr>";
+    }).join("")
+    +"</tbody></table></div>";
+  return panel("回顾统计","starfruit",inner);
+}
+/* 工作回顾统计：与生活版同款面板与同一套 ui.calStatsRange / ui.calStatsOff 状态，只挂工作日历月视图；指标全部来自 S.workItems */
+function calWorkStatsHtml(){
+  var today=todayStr();
+  var range=ui.calStatsRange,off=ui.calStatsOff;
+  var start,end,label;
+  if(range==="week"){
+    var base=shiftDate(today,off*7);
+    start=weekStartOf(base);end=shiftDate(start,6);
+    label=fmtMD(start)+" ~ "+fmtMD(end);
+  }else{
+    var tp=today.split("-").map(Number);
+    var first=new Date(tp[0],tp[1]-1+off,1);
+    start=ymdOf(first);end=ymdOf(new Date(first.getFullYear(),first.getMonth()+1,0));
+    label=first.getFullYear()+" 年 "+(first.getMonth()+1)+" 月";
+  }
+  function inR(d){return !!d&&d>=start&&d<=end;}
+  var days=[];for(var d=0;d<31;d++){var ds=shiftDate(start,d);if(ds>end)break;days.push(ds);}
+  var doneIn=S.workItems.filter(function(w){return w.done&&inR(w.doneDate);});
+  var kindSub=["office","medical","cert"].map(function(k){
+    return KIND_LABEL[k]+" "+doneIn.filter(function(w){return w.kind===k;}).length;
+  }).join(" · ");
+  var dueIn=S.workItems.filter(function(w){return inR(w.dueDate);});
+  var onTime=dueIn.filter(function(w){return w.done&&w.doneDate&&w.doneDate<=w.dueDate;}).length;
+  var dueSub=dueIn.length?("按时办结率 "+Math.round(onTime/dueIn.length*100)+"%"):"";
+  var overdue=S.workItems.filter(function(w){return !w.done&&w.dueDate&&w.dueDate<today;}).length;
+  var distCount={};
+  S.workItems.forEach(function(w){if(!w.done&&w.district)distCount[w.district]=(distCount[w.district]||0)+1;});
+  var distTop=Object.keys(distCount).map(function(k){return [k,distCount[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,3);
+  var distSub=distTop.map(function(p){return p[0]+" "+p[1];}).join(" · ");
+  var dailyStats=days.map(function(ds){
+    return {date:ds,
+      due:S.workItems.filter(function(w){return w.dueDate===ds;}).length,
+      done:S.workItems.filter(function(w){return w.done&&w.doneDate===ds;}).length};
+  });
+  var inner='<div class="row wrap items-center" style="gap:8px;margin-bottom:12px">'
+    +'<button type="button" class="pix-btn '+(range==="week"?"pix-btn-green":"pix-btn-ghost")+'" data-act="cal-stats-range" data-range="week" aria-label="按周统计">按周</button>'
+    +'<button type="button" class="pix-btn '+(range==="month"?"pix-btn-green":"pix-btn-ghost")+'" data-act="cal-stats-range" data-range="month" aria-label="按月统计">按月</button>'
+    +'<span style="flex:1"></span>'
+    +'<button type="button" class="pix-btn pix-btn-ghost" data-act="cal-stats-shift" data-n="-1" aria-label="上一期">‹ 上一期</button>'
+    +'<span class="font-pixel wood-sign" style="padding:6px 14px;font-size:14px">'+label+"</span>"
+    +'<button type="button" class="pix-btn pix-btn-ghost" data-act="cal-stats-shift" data-n="1" aria-label="下一期"'+(off>=0?" disabled":"")+">下一期 ›</button>"
+    +(off!==0?'<button type="button" class="pix-btn pix-btn-ghost" data-act="cal-stats-shift" data-n="0" aria-label="回到本期">回到本期</button>':"")
+    +"</div>"
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px">'
+    +calStatBox("办结件数",doneIn.length+" 件",kindSub)
+    +calStatBox("期内到期",dueIn.length+" 件",dueSub)
+    +calStatBox("目前逾期未办",overdue+" 件","")
+    +calStatBox("各区未办分布",distTop.length?distSub:"—","")
+    +"</div>"
+    +'<div style="overflow-x:auto;margin-top:14px"><table class="tbl" aria-label="每日工作小统计"><thead><tr><th>日期</th><th>到期</th><th>办结</th></tr></thead><tbody>'
+    +dailyStats.map(function(d){
+      return '<tr><td class="font-pixel" style="white-space:nowrap">'+d.date.slice(5)+" 周"+weekdayOf(d.date)+(d.date===today?' <span class="pix-tag pix-tag-green">今</span>':"")+"</td>"
+        +"<td>"+(d.due?d.due:"—")+"</td><td>"+(d.done?d.done:"—")+"</td></tr>";
     }).join("")
     +"</tbody></table></div>";
   return panel("回顾统计","starfruit",inner);
