@@ -109,6 +109,20 @@
         .hud-inner{padding-right:52px;}
         .app-drawer{padding-top:calc(12px + max(env(safe-area-inset-top,0px),52px));}
       }
+      /* 手机顶栏压缩（≤700px）：只保留 env 安全区下限（去掉 52px 硬下限），收紧间距与字号，目标总高约 72px；>700px 桌面与平板不受影响 */
+      @media (max-width:700px){
+        .app-header{padding-top:max(env(safe-area-inset-top,0px),10px);}
+        .hud-inner{padding:4px 8px;gap:5px;}
+        .brand-mobile{display:none!important;}
+        .menu-btn{min-width:40px!important;min-height:38px!important;}
+        #hud .wood-panel{padding:2px 6px!important;}
+        #hud .wood-panel .font-pixel{font-size:13px!important;}
+        #hud b.font-num{font-size:12px;}
+        #hud>div.hud-extra:has(>div){max-width:110px!important;min-width:72px!important;}
+        #hud [data-act="search-open"]{min-height:36px;}
+        #hud [data-act="search-open"]>span{font-size:0;line-height:0;}
+        .app-header .sync-badge{font-size:10px;line-height:15px;padding:1px 5px;}
+      }
 
       .panel{padding:12px;}
       @media (min-width:640px){.panel{padding:16px;}}
@@ -127,10 +141,14 @@
       table.tbl td{padding:6px 8px 6px 0;border-bottom:1px dashed #b99b62;vertical-align:top;}
       .field{display:block;margin-bottom:12px;}
       .field>span{display:block;font-size:14px;font-weight:600;margin-bottom:4px;}
-      .modal-wrap{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:8px;background:rgba(46,26,8,.55);}
+      .modal-wrap{position:fixed;inset:0;z-index:130;display:flex;align-items:flex-end;justify-content:center;padding:8px;background:rgba(46,26,8,.55);}
       @media (min-width:640px){.modal-wrap{align-items:center;padding:16px;}}
-      .modal-box{width:100%;max-width:448px;max-height:88vh;overflow-y:auto;padding:16px;}
+      .modal-box{width:100%;max-width:448px;max-height:88vh;overflow-y:auto;overscroll-behavior:contain;padding:0;}
       .modal-box.wide{max-width:672px;}
+      .modal-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px 10px;background:linear-gradient(180deg,#fbebc0,#f7dd9a);border-bottom:2px solid rgba(74,44,20,.28);}
+      .modal-body{padding:12px 16px 6px;}
+      .modal-foot{position:sticky;bottom:0;z-index:2;display:flex;justify-content:flex-end;padding:10px 16px 12px;background:linear-gradient(180deg,#fbebc0,#f7dd9a);border-top:2px solid rgba(74,44,20,.28);}
+      body.modal-open{overflow:hidden;}
       .iconpick{display:flex;gap:6px;flex-wrap:wrap;}
       .iconpick button{padding:6px;background:rgba(255,246,218,.6);border:2px solid #cbb98d;border-radius:3px;cursor:pointer;}
       .iconpick button.sel{background:#ffe9a8;border-color:#b8860b;}
@@ -209,9 +227,9 @@
       @media (prefers-reduced-motion: reduce){
         #fx-layer>*{display:none;}
       }
-      /* 祝尼魔捉迷藏层：层级 35，低于悬浮小人(40)/弹窗(60)/横幅(70)/顶栏(80)，高于天气层(30) */
-      #junimo{position:fixed;z-index:35;background:none;border:0;padding:0;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.35));animation:junimosway 3.2s ease-in-out infinite;}
-      .junimo-fx{position:fixed;z-index:35;line-height:0;pointer-events:none;}
+      /* 祝尼魔捉迷藏层：层级 135，压过顶栏(80)与弹窗(130)，浮层顶部不被 HUD 遮盖 */
+      #junimo{position:fixed;z-index:135;background:none;border:0;padding:0;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.35));animation:junimosway 3.2s ease-in-out infinite;}
+      .junimo-fx{position:fixed;z-index:135;line-height:0;pointer-events:none;}
       @keyframes junimosway{0%,100%{transform:rotate(-2deg) translateY(0);}50%{transform:rotate(2deg) translateY(-3px);}}
       #junimo.junimo-peek{animation:junimopeek .9s ease-in-out,junimosway 3.2s ease-in-out .9s infinite;}
       @keyframes junimopeek{0%,100%{transform:translateY(0) rotate(0);}30%{transform:translateY(-11px) rotate(-5deg);}60%{transform:translateY(-11px) rotate(5deg);}}
@@ -224,8 +242,8 @@
       @media (prefers-reduced-motion: reduce){
         #junimo,.junimo-jump,.junimo-star,.junimo-petbtn.junimo-wave{animation:none!important;}
       }
-      /* 秘密纸条层（四件套）：层级 34，略低于祝尼魔层，同样避开悬浮小人 */
-      #secretnote{position:fixed;z-index:34;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.6s ease-in-out infinite;}
+      /* 秘密纸条层（四件套）：层级 134，略低于祝尼魔层，同样压过顶栏(80)与弹窗(130) */
+      #secretnote{position:fixed;z-index:134;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.6s ease-in-out infinite;}
       .fest-mark{display:inline-flex;line-height:0;}
       /* 今日页四季轻氛围：小色点轻浮动（复用天气特效的视觉语言） */
       .season-amb{position:relative;height:14px;overflow:visible;pointer-events:none;margin-top:2px;}
@@ -514,7 +532,6 @@ var SEB_LINES={
  morning:["才这个点？我的生物钟说现在是『深夜』。……早。","早晨的阳光对地下室居民是种攻击。你居然还能笑出来。","咖啡。先给我咖啡，再谈今天的计划。……你也没有？那一起摆烂三分钟。","一日之计在于……再睡五分钟。好吧，你赢了，起来干活。","昨晚的梦里全是代码在跑。今天要是再对着屏幕，我大概会变成屏幕的一部分。"],
  night:["夜晚才是我的主场。脑子在十点之后才开始开机。","这个点了，镇上只剩我和猫头鹰还醒着。……还有你。","早点睡吧。熬夜写的代码，第二天看都像别人写的——我经验丰富。","月亮升起来了。有时候我会骑车去悬崖边看月亮，顺便……抽根烟，看看湖。","玩 Solarion 编年史吗？……没玩过也正常，懂的人不多。改天我带你开一局。"],
  work:["委托办完了？……效率意外地高。看来我低估你了。","跑腿回来了。镇长应该给你立个碑，碑文就写『此人能办事』。","又是盖章又是跑区。成年人的副本都这么无聊吗。……但你通关了。","一件搞定。剩下的……慢慢来吧，反正截止日期又不会长腿跑掉。哦，它会。"],
- pomodoro:["25 分钟没碰手机？你比我的自制力强。我的纪录是 4 分钟。","专注的样子……还挺像那么回事。继续，我看好你（小声）。","番茄熟了。我的代码要是也能定时成熟就好了。"],
  clear:["全清了？今天的你，有点可怕。……褒义的那种。","清单空了。这一刻的爽感，值得记进你的复盘里。写的时候别提我。","一件不剩。好吧，今天的 MVP 是你，我勉强当个观众。"],
  redeem:["哦？把积分换成快乐了。明智的消费，比我买的那些游戏明智。","兑换成功。享受吧，这是你应得的——我就不客气地围观了。","花掉的积分才是积分。……这话居然有点哲理，记下来。"]
 };
@@ -523,7 +540,6 @@ var HALEY_LINES={
  morning:["这么早？我的妆还没化完呢。……你什么都没看见，听见没。","早晨的光最适合拍照了。站好别动——好了，这张还不错。","先说好，我起床气还没散。……不过，早安。"],
  night:["夜里的小镇安静得像张照片。……我喜欢。","星星出来了。今晚这身配星空，勉强合格吧。","别熬太晚，黑眼圈很难遮的。……我这是经验之谈。"],
  work:["跑完腿回来了？鞋子都沾灰了。……不过，事情办成这样，还挺帅的。","盖章跑区这种事，也就你能干得这么利索。……夸你了，别得意。","喏，擦擦汗。别误会，我只是不想看你狼狈的样子。"],
- pomodoro:["25 分钟不看手机？……行吧，这点我承认你比我强。","专注的侧脸……咳，我是说，光线正好。别乱想。"],
  clear:["全都清完了？哼，效率高得不像你。……今天允许你得意一下。","清单空了。奖励你——陪我去湖边拍两张照片。走吧。"],
  redeem:["换了喜欢的？眼光不错。……跟我挑的比，还差一点点。","积分就是要花掉的。藏着掖着，又不会变得更漂亮。"]
 };
@@ -532,7 +548,6 @@ var LINUS_LINES={
  morning:["晨光落在帐篷上的时候，新的一天就开始了。早安。","鸟先醒，我随后。早饭是昨晚剩的烤野果，要尝尝吗？"],
  night:["夜里冷，记得添件衣服。星星再好看，也不如一碗热汤实在。","数星星睡不着的时候，我就听风过松林。……你也试试。"],
  work:["替人跑腿，是顶好的修行。脚累了，心是轻的。","办成一件事，就像在山里走完一段路。坐下歇歇，喝口水。"],
- pomodoro:["专注的二十五分钟，像守着一锅慢慢熬的汤。火候到了，香气自己会来。","心静下来，时间就慢了。你做得很好。"],
  clear:["都办完了？好。今晚的星星，可以安心看了。","清单空了，心也空了——空，是为了装下明天的事。"],
  redeem:["把攒下的换成喜欢的，这很好。日子，就是拿来过的。","享受它吧。就像享受一碗热汤，要趁热。"]
 };
@@ -623,8 +638,8 @@ var ACHIEVEMENTS=[
  {key:"first_publish",name:"上岗新人",icon:"sprout",desc:"发布第 1 个任务（待办或工作事项）",quote:"第一张纸条钉上公告板了。小镇的委托系统因你而启动。",points:10},
  {key:"first_work",name:"委托初体验",icon:"scroll",desc:"完成第 1 个委托（工作事项）",quote:"第一份委托交差了。镇长说你很有前途——他对谁都这么说。",points:15},
  {key:"work_10",name:"跑腿界的传说",icon:"boot",desc:"累计完成 10 个委托",quote:"十个区都快跑遍了。建议给鞋也发一份工资。",points:40},
- {key:"pomodoro_1",name:"番茄初熟",icon:"tomato",desc:"完成第 1 次番茄钟专注",quote:"25 分钟没碰手机。手机在旁边哭了很久，你没理它。",points:10},
- {key:"pomodoro_5",name:"番茄批发商",icon:"basket",desc:"累计完成 5 次番茄钟专注",quote:"专注力开始量产了。下一个目标：开个番茄罐头厂。",points:30},
+ {key:"pomodoro_1",name:"十件起步",icon:"checkBadge",desc:"累计完成 10 件待办",quote:"十件待办，一件一件勾掉。清单在变短，你在变稳。",points:10},
+ {key:"pomodoro_5",name:"百件达成",icon:"medal",desc:"累计完成 100 件待办",quote:"一百件待办全部交差。镇上的公告板，快被你一个人包圆了。",points:30},
  {key:"day_clear",name:"今日事今日毕",icon:"sun",desc:"单日待办全部清空",quote:"全清。这一天没有欠账，连良心都不用分期付款。",points:20},
  {key:"gold_1000",name:"千万是富翁",icon:"cat",desc:"累计赚到 1000 G 金币",quote:"不算大富大贵，只是昏迷前总是心有所恃。",points:30},
  {key:"todos_20",name:"待办粉碎机",icon:"hammer",desc:"累计完成 20 件待办",quote:"待办清单在你面前瑟瑟发抖。主要是被勾得太快，眼花。",points:30},
@@ -660,7 +675,7 @@ var GOLD_SHOP_DISPLAY=[
  {key:"fx_firefly",name:"萤火虫之夜",desc:"小光点飘满整个农场。买后可在本页开启或关闭。",price:200,group:"fx"},
  {key:"fx_meteor",name:"流星雨",desc:"时不时有流星划过农场上空。买后可在本页开启或关闭。",price:250,group:"fx"},
  {key:"fx_leaves",name:"飘叶",desc:"秋色的叶子慢慢飘落。买后可在本页开启或关闭。",price:200,group:"fx"},
- {key:"title_hunter",name:"番茄猎手",desc:"一枚称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:200,group:"title"},
+ {key:"title_hunter",name:"专注猎手",desc:"一枚称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:200,group:"title"},
  {key:"title_night",name:"夜班农场主",desc:"一枚称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:200,group:"title"},
  {key:"title_angler",name:"湖边钓鱼人",desc:"一枚称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:200,group:"title"},
  {key:"title_rich",name:"小镇首富",desc:"一枚称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:350,group:"title"},
@@ -953,7 +968,7 @@ function mergeStates(L,R){
       var g=groups[k];
       var dt=delMap[key+"::"+k];var tombTs=dt?dt.ts:0;
       if(k.indexOf("L:")===0){
-        /* 无 id 的老记录（番茄/点击）按同日同类取较多的一边，避免两台各记一份时翻倍 */
+        /* 无 id 的老记录（历史计数/点击）按同日同类取较多的一边，避免两台各记一份时翻倍 */
         var cnt=tombTs>0?0:Math.max(g.lc,g.rc);
         for(var i=0;i<cnt;i++)res.push(g.rec);
         if(g.lc===0)added+=cnt;
@@ -1025,11 +1040,13 @@ function mergeStates(L,R){
   var go=(L.goldOwned||[]).slice();
   (R.goldOwned||[]).forEach(function(x){if(go.indexOf(x)<0)go.push(x);});
   out.goldOwned=go;
-  /* 星之果实授予记录：取并集（哪台设备授过都保留，已授日期取较早的一天） */
+  /* 星之果实授予记录：取并集（哪台设备授过都保留，已授日期取较早的一天）；
+     合并后再按基线口径逐个派生校验，不达标的直接删掉，防止旧设备把已撤销的果子合回来 */
   (function(){
     var sd={};
     [L.stardrops,R.stardrops].forEach(function(o){if(o&&typeof o==="object")Object.keys(o).forEach(function(k){if(typeof o[k]==="string"&&o[k]&&(!sd[k]||o[k]<sd[k]))sd[k]=o[k];});});
     out.stardrops=sd;
+    Object.keys(out.stardrops).forEach(function(k){if(!stardropMetIn(out,k))delete out.stardrops[k];});
   })();
   /* 秘密纸条：当天条目取日期较新的一份（同日时优先已找到的那份）；收藏 found 取并集，轮换池 cycle 取并集（宁可早洗牌，不重复发同一条） */
   (function(){
@@ -1276,8 +1293,8 @@ function achMet(key,s){
     case "first_publish":return s.published>=1;
     case "first_work":return s.workDone>=1;
     case "work_10":return s.workDone>=10;
-    case "pomodoro_1":return s.pomodoros>=1;
-    case "pomodoro_5":return s.pomodoros>=5;
+    case "pomodoro_1":return s.todosDone>=10;
+    case "pomodoro_5":return s.todosDone>=100;
     case "day_clear":return s.dayCleared;
     case "gold_1000":return s.goldEarned>=1000;
     case "todos_20":return s.todosDone>=20;
@@ -1532,10 +1549,6 @@ function todoEditorModal(t){
     +'<label class="field"><span>内容</span><input class="pix-input" name="text" aria-label="待办内容" required value="'+esc(t.text)+'"></label>'
     +'<label class="field"><span>日期（改期）</span><input type="date" class="pix-input" name="date" aria-label="待办日期" value="'+esc(t.date)+'"></label>'
     +'<button type="submit" class="pix-btn pix-btn-green" style="width:100%" aria-label="保存待办">保存</button></form>');
-}
-function completePomodoro(){
-  S.pomodoros.unshift({id:uid(),date:todayStr(),minutes:25,uAt:Date.now()});
-  addLedger("gold",25,"完成番茄钟 25 分钟",todayStr());
 }
 function saveNote(id,title,content,tag){
   if(id==null)S.memos.unshift({id:uid(),title:title,content:content,tag:tag||"备忘",uAt:Date.now()});
@@ -1947,11 +1960,39 @@ function lunarDayNumOf(s){
   if(s.charAt(0)==="廿"||s.charAt(0)==="念")return 20+(CN_DAY_NUM[s.charAt(1)]||0);
   return null;
 }
-/* 农历 (lunarYear, lm, ld) → 公历 "YYYY-MM-DD"：从公历该年 1 月 15 日逐日扫描到次年 2 月 20 日，
-   用 Intl 中文历逐日比对；带「闰」字的月份不匹配任何目标（只认非闰月）。找不到返回 null。 */
+/* 农历信息表（标准编码，与官方万年历交叉验证）：低 4 位=闰月月份（0 无闰月）；
+   bit 0x10000 表示闰月大（30 天，小为 29 天）；bit (0x10000>>m) 表示第 m 月大（30 天，小为 29 天） */
+var LUNAR_INFO_TABLE={2025:0x0a6e6,2026:0x0a4e0,2027:0x0d260,2028:0x0ea65,2029:0x0d530};
+function lunarLeapMonthOf(info){return info&0xf;}
+function lunarLeapDaysOf(info){if(!lunarLeapMonthOf(info))return 0;return (info&0x10000)?30:29;}
+function lunarMonthDaysOf(info,m){return (info&(0x10000>>m))?30:29;}
+function lunarYearDaysOf(info){var d=348+lunarLeapDaysOf(info);for(var m=1;m<=12;m++)if(info&(0x10000>>m))d++;return d;}
+/* 农历 (lunarYear, lm, ld) → 公历 "YYYY-MM-DD"：优先用内嵌信息表从锚点（农历 2025 年正月初一 = 公历 2025-01-29）
+   按整年/整月天数累加；目标日超过该月天数返回 null；年份不在表中时回退到 Intl 逐日扫描。 */
 function lunarToSolar(lunarYear,lm,ld){
   var ck=lunarYear+"-"+lm+"-"+ld;
   if(ck in lunarSolarCache)return lunarSolarCache[ck];
+  var res=null;
+  if(LUNAR_INFO_TABLE[lunarYear]!==undefined&&lunarYear>=2025){
+    var info=LUNAR_INFO_TABLE[lunarYear];
+    if(ld>=1&&ld<=lunarMonthDaysOf(info,lm)){
+      var off=0;
+      for(var y=2025;y<lunarYear;y++)off+=lunarYearDaysOf(LUNAR_INFO_TABLE[y]);
+      var leapM=lunarLeapMonthOf(info);
+      for(var m2=1;m2<lm;m2++){off+=lunarMonthDaysOf(info,m2);if(leapM===m2)off+=lunarLeapDaysOf(info);}
+      off+=ld-1;
+      var dt=new Date(2025,0,29);dt.setDate(dt.getDate()+off);
+      res=ymdOf(dt);
+    }
+  }else{
+    res=lunarToSolarIntl(lunarYear,lm,ld);
+  }
+  lunarSolarCache[ck]=res;
+  return res;
+}
+/* 回退实现：从公历该年 1 月 15 日逐日扫描到次年 2 月 20 日，用 Intl 中文历逐日比对；
+   带「闰」字的月份不匹配任何目标（只认非闰月）。找不到返回 null。 */
+function lunarToSolarIntl(lunarYear,lm,ld){
   var res=null;
   var end=new Date(lunarYear+1,1,20);
   for(var d=new Date(lunarYear,0,15);d<=end;d.setDate(d.getDate()+1)){
@@ -1960,7 +2001,6 @@ function lunarToSolar(lunarYear,lm,ld){
     if(mraw.indexOf("闰")>=0)continue;
     if(lunarYearOfParts(o)===lunarYear&&LUNAR_MONTH_NAMES[mraw]===lm&&lunarDayNumOf(o.day)===ld){res=ymdOf(d);break;}
   }
-  lunarSolarCache[ck]=res;
   return res;
 }
 function nextBirthdayOf(friend,fromStr){
@@ -2078,7 +2118,11 @@ function eveningNews(date){
   var tomorrowTodos=S.todos.filter(function(t){return t.date===tomorrow&&!t.done;}).length;
   var moodRow=null;S.moods.forEach(function(m){if(m.date===date)moodRow=m;});
   var moodName=moodRow?(MOOD_LABELS[moodRow.mood]||null):null;
-  var hasActivity=dayTodos.some(function(t){return t.done;})||workDone.length>0||led.length>0||reds.length>0||pomos>0||habitChecks>0||wos.length>0||tx.length>0||achNames.length>0;
+  var studyCount=S.studyLogs.filter(function(l){return l.date===date;}).length;
+  var reviewRow=null;S.reviews.forEach(function(r){if(r.date===date)reviewRow=r;});
+  var reviewDone=!!(reviewRow&&(reviewRow.gratitude||reviewRow.success||reviewRow.reflection));
+  var financeCount=tx.length;
+  var hasActivity=dayTodos.some(function(t){return t.done;})||workDone.length>0||led.length>0||reds.length>0||pomos>0||habitChecks>0||wos.length>0||tx.length>0||achNames.length>0||studyCount>0||reviewDone||financeCount>0||!!moodRow;
   var doneCount=dayTodos.filter(function(t){return t.done;}).length+workDone.length;
   var headline;
   if(!hasActivity)headline="小镇无事发生，鹈鹕也放假";
@@ -2099,7 +2143,7 @@ function eveningNews(date){
     todosDone:dayTodos.filter(function(t){return t.done;}).length,todosTotal:dayTodos.length,
     workDoneTitles:workDone.map(function(w){return w.title;}),goldDelta:goldDelta,pointsDelta:pointsDelta,
     newAchievementNames:achNames,redemptionNames:reds.map(function(r){return r.rewardName;}),
-    pomodoros:pomos,habitChecks:habitChecks,workoutMinutes:wos.reduce(function(a,w){return a+w.minutes;},0),
+    pomodoros:pomos,habitChecks:habitChecks,studyCount:studyCount,reviewDone:reviewDone,financeCount:financeCount,workoutMinutes:wos.reduce(function(a,w){return a+w.minutes;},0),
     expenseYuan:expenseYuan,incomeYuan:incomeYuan,tomorrowWork:tomorrowWork,tomorrowTodos:tomorrowTodos,
     moodName:moodName,sebLine:sebPool[hash%sebPool.length],flowLines:flowLines};
 }
@@ -2168,8 +2212,9 @@ function buildNewsSnapshot(date,mode){
   }else{
     if(n.todosTotal>0)items.push("每日待办完成 "+n.todosDone+"/"+n.todosTotal+" 件");
     if(n.workDoneTitles.length)items.push("工作事务交差 "+n.workDoneTitles.length+" 项："+n.workDoneTitles.join("、"));
-    if(n.pomodoros>0)items.push("专注番茄 "+n.pomodoros+" 个");
     if(n.habitChecks>0)items.push("习惯打卡 "+n.habitChecks+" 次");
+    if(n.studyCount>0)items.push("书房记录 "+n.studyCount+" 条");
+    if(n.reviewDone)items.push("写了每日复盘");
     if(n.workoutMinutes>0)items.push("运动 "+n.workoutMinutes+" 分钟");
     if(n.incomeYuan>0||n.expenseYuan>0)items.push("现金账本：收入 ¥"+n.incomeYuan+"，支出 ¥"+n.expenseYuan);
     if(n.newAchievementNames.length)items.push("新解锁成就："+n.newAchievementNames.join("、"));
@@ -2211,16 +2256,30 @@ function upsertNewsDay(snap){
   S.newsDays.sort(function(a,b){return a.date<b.date?-1:(a.date>b.date?1:0);});
   return true;
 }
+/* 新鲜度修正日：这一天（及今天）若存档是「无事发生」的定稿，但现算已有活动，说明定稿时漏记了别处来源，以现算为准 */
+var NEWS_FIX_DATE="2026-10-22";
 /* 取某天的报道：今天首次打开即生成存档，白天档随新记录刷新；进入晚间档（18:00 后）定稿，定稿后不再随记录变动。
    过去日期只读存档；无存档（旧数据）按现有记录临时重算展示，渲染层标注「当时未存档」。 */
 function newsForDate(date){
   var mode=newsModeFor(date);
   var stored=findNewsDay(date);
   if(mode==="past"){
-    if(stored)return{snap:stored,archived:true,unarchived:false};
+    if(stored){
+      if(date===NEWS_FIX_DATE&&stored.hasActivity===false){
+        var pfresh=buildNewsSnapshot(date,"evening");
+        if(pfresh.hasActivity){pfresh.finalized=true;if(upsertNewsDay(pfresh))save();return{snap:pfresh,archived:true,unarchived:false};}
+      }
+      return{snap:stored,archived:true,unarchived:false};
+    }
     return{snap:buildNewsSnapshot(date,"evening"),archived:false,unarchived:true};
   }
-  if(stored&&stored.finalized)return{snap:stored,archived:true,unarchived:false};
+  if(stored&&stored.finalized){
+    if(stored.hasActivity===false){
+      var tfresh=buildNewsSnapshot(date,mode);
+      if(tfresh.hasActivity){tfresh.finalized=true;if(upsertNewsDay(tfresh))save();return{snap:tfresh,archived:false,unarchived:false};}
+    }
+    return{snap:stored,archived:true,unarchived:false};
+  }
   var snap=buildNewsSnapshot(date,mode);
   if(mode==="evening"&&new Date().getHours()>=18)snap.finalized=true;
   if(upsertNewsDay(snap))save();
@@ -2274,11 +2333,14 @@ function modal(title,inner,wide){
   document.getElementById("modal-root").innerHTML=
    '<div class="modal-wrap" data-act="modal-backdrop" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'
    +'<div class="wood-panel modal-box bannerin'+(wide?" wide":"")+'" data-stop="1">'
-   +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 class="font-pixel" style="font-size:18px;margin:0">'+esc(title)+'</h3>'
+   +'<div class="modal-head"><h3 class="font-pixel" style="font-size:18px;margin:0">'+esc(title)+'</h3>'
    +'<button type="button" class="pix-btn pix-btn-ghost" data-act="modal-close" aria-label="关闭">×</button></div>'
-   +inner+"</div></div>";
+   +'<div class="modal-body">'+inner+"</div>"
+   +'<div class="modal-foot"><button type="button" class="pix-btn pix-btn-ghost" data-act="modal-close" aria-label="关闭弹窗">关闭</button></div>'
+   +"</div></div>";
+  document.body.classList.add("modal-open");
 }
-function closeModal(){document.getElementById("modal-root").innerHTML="";}
+function closeModal(){document.getElementById("modal-root").innerHTML="";document.body.classList.remove("modal-open");confirmState=null;}
 
 /* ============ 全站全局搜索 ============ */
 /* 纯函数：不区分大小写子串匹配；每类最多 6 条，总数上限 30 条 */
@@ -2291,7 +2353,7 @@ function globalSearch(q){
   var n=0;
   (S.memos||[]).forEach(function(m){if(n>=6||out.length>=30)return;if(hit(m.title)||hit(m.content)){push("memo",null,String(m.title||"").trim()||"无标题备忘录",String(m.content||"").slice(0,40));n++;}});
   n=0;(S.todos||[]).forEach(function(t){if(n>=6||out.length>=30)return;if(hit(t.text)){push("plan",null,t.text||"",t.date||"");n++;}});
-  n=0;(S.workItems||[]).forEach(function(w){if(n>=6||out.length>=30)return;if(hit(w.title)||hit(w.note)){push(w.kind||"office",null,w.title||"",w.note||w.category||"");n++;}});
+  n=0;(S.workItems||[]).forEach(function(w){if(n>=6||out.length>=30)return;if(hit(w.title)||hit(w.note)){var kindPage={admin:"office",yibao:"medical",banzheng:"cert",office:"office",medical:"medical",cert:"cert"}[w.kind]||"office";push(kindPage,null,w.title||"",w.note||w.category||"");n++;}});
   n=0;(S.studyTopics||[]).forEach(function(t){if(n>=6||out.length>=30)return;if(hit(t.title)||hit(t.notes)||hit(t.nextTry)){push("study",null,t.title||"","");n++;}});
   n=0;(S.studyLogs||[]).forEach(function(l){if(n>=6||out.length>=30)return;
     var host="";if(l.url){try{host=new URL(l.url).hostname;}catch(e){}}
@@ -2299,7 +2361,7 @@ function globalSearch(q){
       var tp=findById(S.studyTopics,l.topicId);
       push("study",null,tp?tp.title:"学习记录",l.content||l.linkTitle||"");n++;}});
   n=0;(S.curiosities||[]).forEach(function(c){if(n>=6||out.length>=30)return;if(hit(c.text)){push("study",null,"好奇",c.text||"");n++;}});
-  n=0;(S.financeTx||[]).forEach(function(t){if(n>=6||out.length>=30)return;if(hit(t.title)||hit(t.category)){push("finance",null,t.title||"",String(t.category||"")+" ¥"+fmtYuan(t.amountCents||0));n++;}});
+  n=0;(S.financeTx||[]).forEach(function(t){if(n>=6||out.length>=30)return;if(hit(t.note)||hit(t.cat)||hit(t.title)||hit(t.category)){push("finance",null,t.note||t.cat||t.title||t.category||"记账",(t.cat||t.category||"")+" ¥"+fmtYuan(t.amountCents||0));n++;}});
   if(Array.isArray(S.friends)){n=0;S.friends.forEach(function(fr){if(n>=6||out.length>=30)return;if(hit(fr.name)||hit(fr.note)){push("friends",null,fr.name||"",fr.note||"");n++;}});}
   return out;
 }
@@ -2403,7 +2465,7 @@ var BUNDLE_ITEMS=[
   {key:"study",label:"书房记录",unit:"条",target:8},
   {key:"finDays",label:"记账天数",unit:"天",target:20},
   {key:"reviewDays",label:"每日复盘",unit:"天",target:10},
-  {key:"pomodoro",label:"专注番茄",unit:"个",target:20}
+  {key:"habit30",label:"习惯打卡 30 次",unit:"次",target:30}
 ];
 var SEASON_ZH={spring:"春",summer:"夏",autumn:"秋",winter:"冬"};
 var JUNIMO_BUNDLE_COLORS=["green","red","blue","yellow","purple","orange"];
@@ -2431,9 +2493,9 @@ function bundleCounts(start,end){
     workout:S.workouts.filter(function(w){return inR(w.date);}).length,
     work:S.workItems.filter(function(w){return w.done&&inR(w.doneDate);}).length,
     study:S.studyLogs.filter(function(l){return inR(l.date);}).length,
-    finDays:daySet(S.financeTx),
+    finDays:daySet(S.financeTx.filter(function(t){return t.date>=STARDROP_BASE;})),
     reviewDays:daySet(S.reviews),
-    pomodoro:S.pomodoros.filter(function(p){return inR(p.date);}).length
+    habit30:S.habitLogs.filter(function(l){return inR(l.date);}).length
   };
 }
 function bundleProgressOf(key){
@@ -2465,9 +2527,11 @@ function bundlePanelHtml(){
 }
 
 /* ---------- 10. 星之果实 ---------- */
+/* 基线日：七颗的计数只认基线日（含）之后的记录，基线之前的历史数据不计入 */
+var STARDROP_BASE="2026-10-22";
 var STARDROPS=[
   {key:"work200",label:"累计办结工作 200 件"},
-  {key:"pomo100",label:"累计番茄 100 个"},
+  {key:"todos300",label:"累计完成待办 300 件"},
   {key:"workout100",label:"累计运动 100 次"},
   {key:"review100",label:"累计复盘 100 天"},
   {key:"habit365",label:"累计习惯打卡 365 次"},
@@ -2484,29 +2548,43 @@ function farmEarliestDate(){
   return min;
 }
 function farmAgeDays(){var e=farmEarliestDate();if(!e)return 0;return Math.max(0,Math.round((new Date(todayStr())-new Date(e))/86400000));}
-function stardropMet(key){
+function stardropMetIn(st,key){
+  function since(arr,fn){return (arr||[]).filter(fn).length;}
+  function ge(d){return !!d&&d>=STARDROP_BASE;}
   switch(key){
-    case "work200":return S.workItems.filter(function(w){return w.done;}).length>=200;
-    case "pomo100":return S.pomodoros.length>=100;
-    case "workout100":return S.workouts.length>=100;
-    case "review100":return distinctDaysOf(S.reviews)>=100;
-    case "habit365":return S.habitLogs.length>=365;
-    case "fin1000":return S.financeTx.length>=1000;
-    case "days365":return farmAgeDays()>=365;
+    case "work200":return since(st.workItems,function(w){return w.done&&ge(w.doneDate);})>=200;
+    case "todos300":return since(st.todos,function(t){return t.done&&ge(t.date);})>=300;
+    case "workout100":return since(st.workouts,function(w){return ge(w.date);})>=100;
+    case "review100":{var seen={};(st.reviews||[]).forEach(function(r){if(r&&ge(r.date))seen[r.date]=1;});return Object.keys(seen).length>=100;}
+    case "habit365":return since(st.habitLogs,function(l){return ge(l.date);})>=365;
+    case "fin1000":return since(st.financeTx,function(t){return ge(t.date);})>=1000;
+    case "days365":return daysUntil(STARDROP_BASE,todayStr())>=365;
     default:return false;
   }
 }
+function stardropMet(key){return stardropMetIn(S,key);}
 function stardropShelfHtml(){
   var got=STARDROPS.filter(function(d){return S.stardrops[d.key];}).length;
   var cells=STARDROPS.map(function(d){
     var date=S.stardrops[d.key];
     return '<div class="paper-panel" style="padding:10px;text-align:center'+(date?"":";filter:grayscale(.9);opacity:.55")+'"><div style="display:flex;justify-content:center">'+pixIcon(date?"starfruit":"stardropGray",40)+'</div><div class="small" style="font-weight:600;margin-top:4px">'+esc(d.label)+'</div><div class="xs dim" style="margin-top:2px">'+(date?esc(date)+" 获得 · +50 分":"还没拿到")+"</div></div>";
   }).join("");
-  return '<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 4px;display:flex;align-items:center;gap:8px">'+pixIcon("starfruit",18)+" 星之果实 · 陈列架 "+got+" / "+STARDROPS.length+'</h3><p class="small dim" style="margin:0 0 10px">永久里程碑，达成自动授予，每颗 +50 分，只发一次。</p><div class="grid-cards3">'+cells+"</div></div>";
+  return '<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 4px;display:flex;align-items:center;gap:8px">'+pixIcon("starfruit",18)+" 星之果实 · 陈列架 "+got+" / "+STARDROPS.length+'</h3><p class="small dim" style="margin:0 0 10px">永久里程碑，达成自动授予，每颗 +50 分，只发一次。计数自 2026-10-22 起算。</p><div class="grid-cards3">'+cells+"</div></div>";
 }
 /* 收集包与星之果实的发奖检查：只认真实记录，幂等键兜底（账本层合并也去重）。在 render() 里与 junimoEnsureToday 同位调用 */
 function checkSeasonRewards(){
   var banners=[];var today=todayStr();
+  /* 口径修正撤销：已授予但按基线口径不再达标的果子先撤销，误发的 50 分用一条冲正收回（idem 双保险，多设备只生效一次） */
+  var revoked=false;
+  Object.keys(S.stardrops).forEach(function(key){
+    if(!stardropMet(key)){
+      delete S.stardrops[key];revoked=true;
+      if(ledgerHasIdem("stardrop:"+key)&&!ledgerHasIdem("stardrop-fix:"+key)){
+        addLedger("points",-50,"星之果实口径修正",today,"stardrop-fix:"+key);
+      }
+    }
+  });
+  if(revoked)save();
   STARDROPS.forEach(function(d){
     if(!S.stardrops[d.key]&&stardropMet(d.key)){
       S.stardrops[d.key]=today;
@@ -2789,7 +2867,7 @@ function lifePage(){
   var monthTx=S.financeTx.filter(function(t){return t.date.indexOf(today.slice(0,7))===0;});
   var monthExpense=monthTx.filter(function(t){return t.kind==="expense";}).reduce(function(a,t){return a+t.amountCents;},0);
   var h='<div class="stack">';
-  h+='<div class="wood-sign font-pixel" style="padding:8px 12px;text-align:center;font-size:18px"><span style="display:inline-flex;align-items:center;gap:8px">'+pixIcon(s.icon,20)+" "+s.season+"季 "+s.day+" 日 · 星期"+weekdayOf(today)+" · "+today+"</span></div>";
+  h+='<div class="wood-sign font-pixel" style="padding:8px 12px;text-align:center;font-size:13px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">'+pixIcon(s.icon,16)+" "+s.season+"季 "+s.day+" 日 · 星期"+weekdayOf(today)+" · "+today+"</span></div>";
   h+=seasonAmbienceHtml(today);
   /* 今天先做这三件（生活首页）：只取今日未完成的生活待办，工作事务不混进来（工作侧同款小块在今日工作页顶部）；仅聚合展示，不存第二份数据 */
   var focusList=[];
@@ -2824,8 +2902,7 @@ function lifePage(){
   h+='<div class="row wrap" role="group" aria-label="今日小牌">'
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">待办 '+done+"/"+my.length+"</span>"
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">工作到期 '+dueWork.length+"</span>"
-    +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">本月支出 ¥'+fmtYuan(monthExpense)+"</span>"
-    +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">番茄 '+S.pomodoros.filter(function(p){return p.date===today;}).length+"</span></div>";
+    +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">本月支出 ¥'+fmtYuan(monthExpense)+"</span></div>";
   var todayAnchors=anchorsForDate(today);
   if(todayAnchors.length>0){
     var anchorsResolved=todayAnchors.filter(function(a){return !!anchorStatus(a.id,today);}).length;
@@ -2888,57 +2965,7 @@ function lifePage(){
   return h;
 }
 
-/* ============ 页面：每日计划 + 番茄钟 ============ */
-/* 番茄钟：按结束时间 endAt 差值算剩余（后台节流、切页、刷新都不丢进度），进度存 localStorage 可恢复。
-   归零完成时先复位再发奖，归零后再点「开始」是新番茄，不会重复发奖（仍 +25 G/个）。 */
-var POMO_KEY="fanshu-pomo-v1";
-var pomo={seconds:25*60,running:false,timer:null,done:false,endAt:null};
-function pomoPersist(){
-  try{localStorage.setItem(POMO_KEY,JSON.stringify({endAt:pomo.endAt,remain:pomo.seconds,running:pomo.running}));}catch(e){}
-}
-function pomoRestore(){
-  try{
-    var raw=localStorage.getItem(POMO_KEY);if(!raw)return;
-    var v=JSON.parse(raw);if(!v)return;
-    if(v.running&&v.endAt){
-      var left=Math.ceil((v.endAt-Date.now())/1000);
-      if(left>0){pomo.endAt=v.endAt;pomo.seconds=left;pomo.running=true;pomo.timer=setInterval(pomoTick,500);}
-      else{pomo.endAt=null;pomo.seconds=25*60;pomo.running=false;pomoPersist();}
-    }else if(typeof v.remain==="number"&&v.remain>0&&v.remain<25*60){pomo.seconds=v.remain;}
-  }catch(e){}
-}
-function pomoTick(){
-  if(!pomo.running||!pomo.endAt)return;
-  var left=Math.max(0,Math.ceil((pomo.endAt-Date.now())/1000));
-  pomo.seconds=left;
-  var el=document.getElementById("pomo-time");
-  if(el)el.textContent=pad2(Math.floor(left/60))+":"+pad2(left%60);
-  if(left<=0)pomoFinish();
-}
-function pomoFinish(){
-  pomo.running=false;pomo.endAt=null;pomo.seconds=25*60;pomo.done=false;
-  if(pomo.timer){clearInterval(pomo.timer);pomo.timer=null;}
-  pomoPersist();
-  mutate(function(){completePomodoro();},{say:"pomodoro"});
-}
-function pomoToggle(){
-  if(pomo.running){
-    pomo.seconds=Math.max(0,Math.ceil((pomo.endAt-Date.now())/1000));
-    pomo.running=false;pomo.endAt=null;
-    if(pomo.timer){clearInterval(pomo.timer);pomo.timer=null;}
-  }else{
-    if(pomo.seconds<=0)pomo.seconds=25*60;
-    pomo.endAt=Date.now()+pomo.seconds*1000;pomo.running=true;
-    if(pomo.timer)clearInterval(pomo.timer);
-    pomo.timer=setInterval(pomoTick,500);
-  }
-  pomoPersist();render();
-}
-function pomoReset(){
-  pomo.running=false;pomo.endAt=null;
-  if(pomo.timer){clearInterval(pomo.timer);pomo.timer=null;}
-  pomo.seconds=25*60;pomo.done=false;pomoPersist();render();
-}
+/* ============ 页面：每日计划 ============ */
 /* ============ 固定锚点 / 周期事务：渲染组件 ============ */
 var DOW_ORDER=[1,2,3,4,5,6,0];
 function dowButtonsHtml(selected,act){
@@ -3117,7 +3144,6 @@ function shopItemRowHtml(it){
     +'<button type="button" style="background:none;border:0;cursor:pointer;padding:0;display:inline-flex" data-act="shop-toggle" data-id="'+it.id+'" aria-label="'+esc(it.name)+(it.bought?"，已买，点击恢复待买":"，待买，点击标记已买")+'">'+pixIcon(it.bought?"checkBadge":"boxEmpty",20)+"</button>"
     +'<span'+(it.bought?' class="strike dim"':"")+"><b>"+esc(it.name)+"</b></span>"
     +(it.qty?'<span class="xs dim">× '+esc(it.qty)+"</span>":"")
-    +tag(it.source==="手记"?"手记":"来自："+esc(it.source),"pix-tag-blue")
     +'<span style="margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap">'
     +'<button type="button" class="pix-btn pix-btn-ghost" data-act="shop-edit" data-id="'+it.id+'" aria-label="编辑采购条目 '+esc(it.name)+'">编辑</button>'
     +'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="shop-del" data-id="'+it.id+'" aria-label="删除采购条目 '+esc(it.name)+'">删除</button></span></li>';
@@ -3125,7 +3151,7 @@ function shopItemRowHtml(it){
 function shoppingPanelHtml(){
   var pending=S.shopping.filter(function(x){return !x.bought;});
   var bought=S.shopping.filter(function(x){return x.bought;});
-  var h='<p class="small dim" style="margin:0 0 12px">要买的东西记在这里。周期事务临近到期又缺物资时，会自动加进来，来源标事务名。</p>';
+  var h='<p class="small dim" style="margin:0 0 12px">要买的东西记在这里。周期事务临近到期又缺物资时，会自动加进来。</p>';
   h+='<form data-form="shop-add" style="margin-bottom:16px"><div class="row wrap">'
     +'<input class="pix-input" name="name" style="flex:2 1 160px" aria-label="采购名称" placeholder="要买的东西">'
     +'<input class="pix-input" name="qty" style="flex:0 1 110px" aria-label="数量（可空）" placeholder="数量（可空）">'
@@ -3144,7 +3170,6 @@ function shopEditorModal(it){
     '<form data-form="shop-save"><input type="hidden" name="id" value="'+it.id+'">'
     +'<label class="field"><span>名称</span><input class="pix-input" name="name" value="'+esc(it.name)+'" aria-label="采购名称"></label>'
     +'<label class="field"><span>数量（可空）</span><input class="pix-input" name="qty" value="'+esc(it.qty||"")+'" aria-label="数量（可空）"></label>'
-    +'<p class="small dim" style="margin:0 0 12px">来源：'+esc(it.source)+"</p>"
     +'<button type="submit" class="pix-btn pix-btn-green" style="width:100%" aria-label="保存采购条目">保存</button></form>');
 }
 
@@ -3206,18 +3231,12 @@ function planListRowHtml(t,extra){
 function planPage(){
   var today=todayStr();
   var groups=planGroups();
-  var cells=groups.today.slice();
-  while(cells.length%4!==0||cells.length<8){cells.push(null);if(cells.length>=24)break;}
-  var mm=pad2(Math.floor(pomo.seconds/60)),ss=pad2(pomo.seconds%60);
   var h='<div class="stack">';
   h+=panel("每日计划 · 今天","backpack",
     '<p class="small dim" style="margin:0 0 12px">星期'+weekdayOf(today)+" · 完成待办每件 +10 G</p>"
     +'<form class="row wrap" style="margin-bottom:12px" data-form="todo-add"><input class="pix-input" name="text" style="flex:1;min-width:140px" aria-label="新待办内容" placeholder="新待办"><input type="date" class="pix-input" name="date" style="width:170px" aria-label="待办日期" value="'+today+'"><button type="submit" class="pix-btn pix-btn-green" aria-label="添加待办">＋ 添加</button></form>'
     +(groups.today.length===0?emptyState("leaf","今天还没有待办。")
-      :'<div class="grid-slots" role="list" aria-label="待办格子">'+cells.map(function(t,i){
-        if(!t)return '<div class="slot-cell empty" aria-hidden="true"><span style="font-size:18px;opacity:.4">·</span></div>';
-        return '<div class="slot-cell'+(t.done?" done":"")+'" role="listitem" data-act="todo-toggle" data-id="'+t.id+'" aria-label="'+esc(t.text)+"，"+(t.done?"已完成":"未完成")+'，点击切换">'+pixIcon(t.done?"checkBadge":"star",20)+'<span class="xs" style="line-height:1.25">'+esc(t.text)+'</span><span style="display:inline-flex;gap:2px"><button type="button" class="xs" style="padding:0 4px;color:#8a6a45;background:none;border:0;cursor:pointer;font-family:inherit" data-act="todo-edit" data-id="'+t.id+'" aria-label="编辑待办 '+esc(t.text)+'">编辑</button><button type="button" class="xs" style="padding:0 4px;color:#a33;background:none;border:0;cursor:pointer;font-family:inherit" data-act="todo-del" data-id="'+t.id+'" aria-label="删除待办 '+esc(t.text)+'">删除</button></span></div>';
-      }).join("")+"</div>"));
+      :'<ul style="list-style:none;margin:0;padding:0">'+groups.today.map(function(t){return planListRowHtml(t,"");}).join("")+"</ul>"));
   var next="";
   if(groups.overdue.length>0){
     next+='<div class="row items-center" style="gap:8px;margin-bottom:4px"><span class="font-pixel" style="font-size:15px">逾期</span><span class="pix-tag" style="background:#f8cfc9;border-color:#b03a2e;color:#8c2b20">'+groups.overdue.length+" 件</span></div>"
@@ -3232,11 +3251,6 @@ function planPage(){
   });
   if(groups.overdue.length===0&&groups.upcoming.length===0)next=emptyState("leaf","后面还没有安排。");
   h+=panel("接下来","calendar",next);
-  h+=panel("番茄钟","tomato",
-    '<div class="row wrap items-center" style="gap:16px"><div class="font-num" id="pomo-time" style="font-size:30px" aria-live="polite">'+mm+":"+ss+'</div>'
-    +'<div class="row"><button type="button" class="pix-btn pix-btn-green" data-act="pomo-toggle" aria-label="'+(pomo.running?"暂停番茄钟":"开始番茄钟")+'">'+(pomo.running?"暂停":"开始")+'</button>'
-    +'<button type="button" class="pix-btn pix-btn-ghost" data-act="pomo-reset" aria-label="重置番茄钟">↺ 重置</button></div></div>'
-    +'<p class="xs dim" style="margin:8px 0 0">专注 25 分钟完成一个番茄，+25 G。</p>');
   var pastDone=S.todos.filter(function(t){return t.date<todayStr()&&t.done;});
   if(pastDone.length>0){
     h+='<details class="wood-panel panel"><summary class="font-pixel" style="cursor:pointer"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("archive",16)+" 往日已完成（"+pastDone.length+" 件）</span></summary>"
@@ -3282,7 +3296,7 @@ function reviewPage(){
     +'<div class="row"><button type="submit" class="pix-btn pix-btn-green" aria-label="保存复盘">保存这一天</button>'
     +(existing?'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="review-del" aria-label="删除这一天的复盘">删除</button>':"")
     +"</div></form>");
-  h+=panel("心情月历","moodcal",moodMonthGridHtml("mood-bubble"));
+  h+=panel("心情月历","moodcal",moodMonthGridHtml("mood-day-jump"));
   if(past.length>0){
     h+=panel("往日复盘","book",'<div class="row wrap">'+past.map(function(r){
       return '<button type="button" class="pix-btn pix-btn-ghost" data-act="review-jump" data-date="'+r.date+'" aria-label="查看 '+r.date+' 的复盘">'+r.date+"（周"+weekdayOf(r.date)+"）</button>";}).join("")+"</div>");
@@ -3307,7 +3321,7 @@ function moodTodayPanelHtml(){
     +(todayMood?"":'<p class="small" style="text-align:center;margin:8px 0 0;color:#7a5a2a">今天还没选心情。</p>'));
 }
 /* 心情月历网格（月份切换沿用 mood-month / ui.moodMonth）：cellAct 决定格子点击行为，
-   心情页用 mood-edit（直接开编辑弹窗），复盘页用 mood-bubble（先弹小气泡） */
+   心情页用 mood-edit（直接开编辑弹窗），复盘页用 mood-day-jump（点某天直达那天的复盘） */
 function moodMonthGridHtml(cellAct){
   var today=todayStr();
   var month=ui.moodMonth||today.slice(0,7);
@@ -3334,23 +3348,6 @@ function moodPage(){
   h+=panel("小鸡月历","calendar",moodMonthGridHtml("mood-edit"));
   h+="</div>";
   return h;
-}
-/* 复盘页心情月历点某天的小气泡：只瞄一眼当日心情；「展开看看」把那天的完整复盘载入上方表单 */
-function moodBubbleModal(date){
-  var entry=null;S.moods.forEach(function(m){if(m.date===date)entry=m;});
-  var def=entry?MOOD_BY_KEY[entry.mood]:null;
-  var inner;
-  if(entry&&def){
-    inner='<div style="text-align:center;padding:4px 0">'+chickSvg(def,48)
-      +'<div class="font-pixel" style="font-size:17px;margin-top:6px">'+esc(def.label)+"</div>"
-      +(entry.note?'<p class="small" style="margin:8px 0 0;white-space:pre-wrap">'+esc(entry.note)+"</p>":"")+"</div>";
-  }else{
-    inner='<p class="small" style="text-align:center;margin:8px 0">这天还没记心情。</p>';
-  }
-  inner+='<div class="row wrap" style="justify-content:center;margin-top:12px">'
-    +'<button type="button" class="pix-btn pix-btn-green" data-act="mood-bubble-open" data-date="'+date+'" aria-label="展开查看 '+date+' 的完整复盘">展开看看</button>'
-    +'<button type="button" class="pix-btn pix-btn-ghost" data-act="modal-close" aria-label="关闭">关闭</button></div>';
-  modal(date+" · 星期"+weekdayOf(date),inner);
 }
 function moodEditorModal(date){
   var existing=null;S.moods.forEach(function(m){if(m.date===date)existing=m;});
@@ -3460,7 +3457,10 @@ function calHeaderHtml(){
     +'<span style="flex:1"></span>'
     +[["week","周视图"],["month","月视图"],["day","日视图"]].map(function(v){
       return '<button type="button" class="pix-btn '+(view===v[0]?"pix-btn-green":"pix-btn-ghost")+'" data-act="cal-view" data-view="'+v[0]+'" aria-pressed="'+(view===v[0])+'" aria-label="'+v[1]+'">'+v[1]+"</button>";}).join("")
-    +"</div>"
+    +'<span style="display:inline-flex;gap:4px;margin-left:6px" role="group" aria-label="日历空间切换">'
+    +[["life","生活"],["work","工作"]].map(function(sp){
+      return '<button type="button" class="pix-btn '+(space===sp[0]?"pix-btn-green":"pix-btn-ghost")+'" data-act="cal-space" data-space="'+sp[0]+'" aria-pressed="'+(space===sp[0])+'" aria-label="切换到'+sp[1]+'日历">'+sp[1]+"</button>";}).join("")
+    +"</span></div>"
     +'<div class="row wrap items-center" style="gap:8px;margin-top:10px">'
     +'<button type="button" class="pix-btn pix-btn-ghost" data-act="cal-shift" data-n="-1" aria-label="上一'+unit+'">‹ 上一'+unit+"</button>"
     +'<span class="font-pixel wood-sign" style="padding:6px 14px;font-size:15px">'+rangeLabel+"</span>"
@@ -3613,7 +3613,6 @@ function calStatsHtml(){
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px">'
     +calStatBox("待办完成",todosDone.length+" / "+todosIn.length,todosIn.length?("完成率 "+Math.round(todosDone.length/todosIn.length*100)+"%"):"")
     +calStatBox("工作办结",workDone.length+" 件","")
-    +calStatBox("番茄",pomos.length+" 个",pomos.length?("约 "+(pomos.length*25)+" 分钟"):"")
     +calStatBox("习惯打卡",habitLogs.length+" 次","")
     +calStatBox("运动",workoutMin+" 分钟",workouts.length+" 次")
     +calStatBox("学习记录",studyLogs.length+" 条","")
@@ -3624,10 +3623,10 @@ function calStatsHtml(){
     +calStatBox("成就解锁",achN+" 枚","")
     +calStatBox("复盘天数",reviewDays+" 天","")
     +"</div>"
-    +'<div style="overflow-x:auto;margin-top:14px"><table class="tbl" aria-label="每日小统计"><thead><tr><th>日期</th><th>待办完成</th><th>番茄</th><th>运动分钟</th><th>当日金币</th></tr></thead><tbody>'
+    +'<div style="overflow-x:auto;margin-top:14px"><table class="tbl" aria-label="每日小统计"><thead><tr><th>日期</th><th>待办完成</th><th>运动分钟</th><th>当日金币</th></tr></thead><tbody>'
     +dailyStats.map(function(d){
       return '<tr><td class="font-pixel" style="white-space:nowrap">'+d.date.slice(5)+" 周"+weekdayOf(d.date)+(d.date===today?' <span class="pix-tag pix-tag-green">今</span>':"")+"</td>"
-        +"<td>"+d.done+"/"+d.total+"</td><td>"+(d.pomos?d.pomos:"—")+"</td><td>"+(d.wmin?d.wmin:"—")+"</td><td>"+(d.gold?"+"+d.gold+" G":"—")+"</td></tr>";
+        +"<td>"+d.done+"/"+d.total+"</td><td>"+(d.wmin?d.wmin:"—")+"</td><td>"+(d.gold?"+"+d.gold+" G":"—")+"</td></tr>";
     }).join("")
     +"</tbody></table></div>";
   return panel("回顾统计","starfruit",inner);
@@ -4868,6 +4867,7 @@ document.addEventListener("click",function(e){
     case "go":go(el.dataset.page);break;
     case "go-region":go("regionDetail",el.dataset.district);break;
     /* 农场日历 */
+    case "cal-space":ui.calSpace=el.dataset.space;render();break;
     case "cal-view":ui.calView=el.dataset.view;render();break;
     case "cal-shift":{
       var cn=Number(el.dataset.n)||0;var cf=calFocusDate();
@@ -4908,8 +4908,6 @@ document.addEventListener("click",function(e){
       if(cs.act==="study-del")delWithUndo("学习主题已彻底删除",function(){deleteStudyTopic(cs.id);});
       else if(cs.act==="habit-del")delWithUndo("习惯已彻底删除",function(){deleteHabit(cs.id);});
       break;}
-    case "pomo-toggle":pomoToggle();break;
-    case "pomo-reset":pomoReset();break;
     /* 复盘 */
     case "review-del":delWithUndo("这一天的复盘已删除",function(){deleteReview(ui.reviewDate||todayStr());});break;
     case "review-jump":ui.reviewDate=el.dataset.date;ui.reviewFollow=false;render();break;
@@ -4935,10 +4933,13 @@ document.addEventListener("click",function(e){
       var month=ui.moodMonth||todayStr().slice(0,7);var p=month.split("-").map(Number);
       var dt=new Date(p[0],p[1]-1+Number(el.dataset.n),1);
       ui.moodMonth=dt.getFullYear()+"-"+pad2(dt.getMonth()+1);render();break;}
-    case "mood-bubble":moodBubbleModal(el.dataset.date);break;
-    case "mood-bubble-open":{
-      var bdate=el.dataset.date;closeModal();
-      ui.reviewDate=bdate;ui.reviewFollow=false;window.scrollTo({top:0});render();break;}
+    case "mood-day-jump":{
+      var jdate=el.dataset.date;
+      var hasRev=S.reviews.some(function(r){return r.date===jdate;});
+      var hasMood=S.moods.some(function(m){return m.date===jdate;});
+      if(hasRev||hasMood){ui.reviewDate=jdate;ui.reviewFollow=false;window.scrollTo({top:0});render();}
+      else pushBanners([{icon:"moodcal",title:"这一天没有留下复盘或心情记录。",sub:"",small:true}]);
+      break;}
     case "mood-edit":moodEditorModal(el.dataset.date);break;
     case "mood-edit-pick":{
       document.getElementById("mood-edit-sel").value=el.dataset.mood;
@@ -5533,7 +5534,6 @@ render();
 renderCompanion();
 updateSyncBadge();
 bootGate();
-pomoRestore();
 /* 每 30 秒检查一次跨天：跨天自动按新的一天重绘并提示 */
 var bootDay=todayStr();
 setInterval(function(){
