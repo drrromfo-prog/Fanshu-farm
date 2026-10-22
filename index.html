@@ -3184,6 +3184,14 @@ function memoEditorModal(editing){
 }
 
 /* ============ 页面：书房（兴趣书房） ============ */
+/* 主题备注渲染：先转义，再把 http(s) 网址变成可点链接（href 完整，显示过长截断） */
+function studyNotesHtml(notes){
+  return esc(notes).replace(/https?:\/\/[^\s<>"']+/g,function(u){
+    var display=u;
+    if(u.length>64)display=u.slice(0,61).replace(/&[^;&]*$/,"")+"…";
+    return '<a href="'+u+'" target="_blank" rel="noopener">'+display+"</a>";
+  });
+}
 /* 主题卡片：书桌与书架共用 */
 function studyTopicCard(t){
   var course="";
@@ -3195,7 +3203,7 @@ function studyTopicCard(t){
     course='<p class="small" style="margin:4px 0 0">'+parts.join(" · ")+"</p>";
   }
   return '<article class="paper-panel" style="padding:12px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><h3 class="font-pixel" style="margin:0">'+esc(t.title)+'</h3><span class="pix-tag '+(t.status==="learning"?"pix-tag-green":"pix-tag-blue")+'">'+(t.status==="learning"?"正在学习":"想学")+"</span></div>"
-  +(t.notes?'<p class="small" style="margin:4px 0 0;white-space:pre-wrap">'+esc(t.notes)+"</p>":"")
+  +(t.notes?'<p class="small" style="margin:4px 0 0;white-space:pre-wrap">'+studyNotesHtml(t.notes)+"</p>":"")
   +(t.nextTry?'<p class="small" style="margin:4px 0 0">下次想试：'+esc(t.nextTry)+"</p>":"")
   +course
   +'<form style="margin-top:8px" data-form="study-log" data-id="'+t.id+'">'
@@ -3222,7 +3230,7 @@ function studyLogRow(l,topicName,findingOnly){
 function studyPage(){
   var q=ui.studyQ;
   var activeTopics=S.studyTopics.filter(function(t){return !t.archived;});
-  var topics=activeTopics.filter(function(t){return (t.title||"").indexOf(q)>=0||(t.notes||"").indexOf(q)>=0;});
+  var topics=activeTopics.filter(function(t){return !t.pinned&&((t.title||"").indexOf(q)>=0||(t.notes||"").indexOf(q)>=0);});
   var pinnedTopics=activeTopics.filter(function(t){return t.pinned;});
   var archivedTopics=S.studyTopics.filter(function(t){return t.archived;});
   var recent=S.studyLogs.slice(0,8);
@@ -3237,10 +3245,10 @@ function studyPage(){
         return '<li class="paper-panel small" style="padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;min-width:140px">'+esc(c.text)+'</span><span class="xs dim">'+esc(c.date||"")+"</span>"
         +'<button type="button" class="pix-btn pix-btn-ghost" data-act="curiosity-promote" data-id="'+c.id+'" aria-label="把这条好奇展开成主题">展开成主题</button>'
         +'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="curiosity-del" data-id="'+c.id+'" aria-label="删除这条好奇">删除</button></li>';}).join("")+"</ul>"));
-  /* 书桌：只放置顶主题，没有置顶时整块不显示 */
-  if(pinnedTopics.length>0){
-    h+=panel("书桌","pin",'<div class="grid-cards">'+pinnedTopics.map(studyTopicCard).join("")+"</div>");
-  }
+  /* 书桌：只放置顶主题；常显，空时给一句空态说明 */
+  h+=panel("书桌","pin",pinnedTopics.length>0
+    ?'<div class="grid-cards">'+pinnedTopics.map(studyTopicCard).join("")+"</div>"
+    :'<p class="small dim" style="margin:0">还没有置顶的主题。点主题卡上的『置顶』，它会出现在这里。</p>');
   /* 书架：全部未归档主题 */
   h+=panel("兴趣书房","book",
     '<div class="row wrap" style="margin-bottom:12px"><div style="flex:1;min-width:180px"><input class="pix-input" id="study-q" aria-label="搜索学习主题" placeholder="搜索…" value="'+esc(q)+'"></div>'
@@ -3248,10 +3256,10 @@ function studyPage(){
     +'<p class="small dim" style="margin:0 0 12px">共 '+activeTopics.length+" 个主题，正在学习 "+activeTopics.filter(function(t){return t.status==="learning";}).length+" 个。</p>"
     +(topics.length===0?emptyState("leaf","还没有学习主题。")
       :'<div class="grid-cards">'+topics.map(studyTopicCard).join("")+"</div>"));
-  /* 我的发现：手动标星的记录 */
-  if(findings.length>0){
-    h+=panel("我的发现","star",'<ul style="list-style:none;margin:0;padding:0">'+findings.map(function(l){return studyLogRow(l,topicName(l.topicId),true);}).join("")+"</ul>");
-  }
+  /* 我的发现：手动标星的记录；常显，空时给一句空态说明 */
+  h+=panel("我的发现","star",findings.length>0
+    ?'<ul style="list-style:none;margin:0;padding:0">'+findings.map(function(l){return studyLogRow(l,topicName(l.topicId),true);}).join("")+"</ul>"
+    :'<p class="small dim" style="margin:0">还没有标星的记录。在『最近记录』里点『标星』，它会出现在这里。</p>');
   if(recent.length>0){
     h+=panel("最近记录","clock",'<ul style="list-style:none;margin:0;padding:0">'+recent.map(function(l){return studyLogRow(l,topicName(l.topicId),false);}).join("")+"</ul>");
   }
