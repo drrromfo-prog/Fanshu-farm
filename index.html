@@ -209,6 +209,21 @@
       @media (prefers-reduced-motion: reduce){
         #fx-layer>*{display:none;}
       }
+      /* 祝尼魔捉迷藏层：层级 35，低于悬浮小人(40)/弹窗(60)/横幅(70)/顶栏(80)，高于天气层(30) */
+      #junimo{position:fixed;z-index:35;background:none;border:0;padding:0;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.35));animation:junimosway 3.2s ease-in-out infinite;}
+      .junimo-fx{position:fixed;z-index:35;line-height:0;pointer-events:none;}
+      @keyframes junimosway{0%,100%{transform:rotate(-2deg) translateY(0);}50%{transform:rotate(2deg) translateY(-3px);}}
+      #junimo.junimo-peek{animation:junimopeek .9s ease-in-out,junimosway 3.2s ease-in-out .9s infinite;}
+      @keyframes junimopeek{0%,100%{transform:translateY(0) rotate(0);}30%{transform:translateY(-11px) rotate(-5deg);}60%{transform:translateY(-11px) rotate(5deg);}}
+      .junimo-jump{display:inline-block;animation:junimojump .68s ease-out;}
+      @keyframes junimojump{0%{transform:translateY(0);}35%{transform:translateY(-16px) scale(1.07);}70%{transform:translateY(2px);}100%{transform:translateY(0);}}
+      .junimo-star{position:absolute;left:50%;top:36%;line-height:0;animation:junimoburst .68s ease-out both;}
+      @keyframes junimoburst{0%{transform:translate(-50%,-50%) scale(.4);opacity:1;}100%{transform:translate(calc(-50% + var(--jx,0px)),calc(-50% + var(--jy,0px))) scale(1);opacity:0;}}
+      .junimo-petbtn{background:none;border:0;padding:4px;cursor:pointer;line-height:0;}
+      .junimo-petbtn.junimo-wave{animation:junimopeek .7s ease-in-out;}
+      @media (prefers-reduced-motion: reduce){
+        #junimo,.junimo-jump,.junimo-star,.junimo-petbtn.junimo-wave{animation:none!important;}
+      }
     </style>
   </head>
   <body class="locked" style="overflow:hidden">
@@ -231,6 +246,7 @@
     <div id="banner-root"></div>
     <div id="undo-root"></div>
     <div id="fx-layer" aria-hidden="true"></div>
+    <div id="junimo-root"></div>
     <div id="companion-root"></div>
     <script>
 "use strict";
@@ -343,6 +359,135 @@ function chickSvg(m,size){
   else if(m.mouth==="small"){R(8,15,1,1,BEAK);}
   else{R(7,15,3,1,BEAK);R(8,16,1,1,BEAKD);}
   return rectsSvg(rects,"0 0 16 21",size,h);
+}
+
+/* ============ 祝尼魔（吉祥物 + 每日捉迷藏） ============
+   本体轮廓按官方像素精灵逐格描：圆身、黑点眼、两侧短手、头顶叶芽；只换体色，禁止加表情/腮红/嘴。
+   它不说话、不进小人台词系统；状态存 S.junimo 随同步包走，奖励走账本幂等键防多设备双发。 */
+var JUNIMO_COLORS={
+  green:{body:"#5db84a",dark:"#3f8f2e"},
+  red:{body:"#d9553f",dark:"#b23727"},
+  blue:{body:"#4a90d9",dark:"#2f6cb3"},
+  yellow:{body:"#eec93e",dark:"#c79c1d"},
+  purple:{body:"#9a62c9",dark:"#7443a3"},
+  orange:{body:"#e8853a",dark:"#c2641f"}
+};
+function junimoSvg(colorKey,size){
+  size=size||46;var h=Math.round(size*17/16);
+  var c=JUNIMO_COLORS[colorKey]||JUNIMO_COLORS.green;
+  var OUT="#2b1a10",INK="#241408",LEAF="#4a9e3f",LEAFD="#35702a",STEM="#7a4a1c";
+  var rects=[];function R(x,y,w,hh,f){rects.push([x,y,w,hh,f]);}
+  /* 头顶叶芽 */
+  R(6,0,4,1,LEAF);R(5,1,3,1,LEAF);R(8,1,3,1,LEAFD);R(7,2,2,1,STEM);
+  /* 身体轮廓 */
+  R(5,3,6,1,OUT);R(4,4,8,1,OUT);R(3,5,10,1,OUT);R(3,6,1,7,OUT);R(12,6,1,7,OUT);R(3,13,10,1,OUT);R(4,14,8,1,OUT);R(5,15,6,1,OUT);
+  /* 体色填充（底部两行深色压出圆肚） */
+  R(5,4,6,1,c.body);R(4,5,8,1,c.body);R(4,6,8,6,c.body);R(4,12,8,1,c.dark);R(4,13,8,1,c.dark);R(5,14,6,1,c.dark);
+  /* 两侧短手 */
+  R(1,8,2,3,INK);R(13,8,2,3,INK);
+  /* 黑点眼 */
+  R(6,8,1,2,INK);R(9,8,1,2,INK);
+  /* 小脚 */
+  R(5,16,2,1,INK);R(9,16,2,1,INK);
+  return rectsSvg(rects,"0 0 16 17",size,h);
+}
+/* 藏身页白名单（主页面 page key）：今日/每日计划/日常SOP/每日复盘/备忘录/书房/健身/财务/习惯/今日工作/办公室行政事务/医保事务/办证事务/农场日历/成就图鉴/奖励商店/个人简介/朋友档案 */
+var JUNIMO_PAGES=["life","plan","sop","review","memo","study","fitness","finance","habits","workToday","office","medical","cert","calendar","achievements","shop","profile","friends"];
+var JUNIMO_CORNERS=["tl","tr","bl","br"];
+function junimoSpotValid(sp){
+  return !!sp&&typeof sp==="object"&&JUNIMO_PAGES.indexOf(sp.page)>=0&&JUNIMO_CORNERS.indexOf(sp.corner)>=0&&!!JUNIMO_COLORS[sp.color];
+}
+function junimoGenSpot(excludePage){
+  var pages=JUNIMO_PAGES.filter(function(k){return k!==excludePage;});
+  var colors=Object.keys(JUNIMO_COLORS);
+  return {
+    page:pages[Math.floor(Math.random()*pages.length)],
+    corner:JUNIMO_CORNERS[Math.floor(Math.random()*JUNIMO_CORNERS.length)],
+    color:colors[Math.floor(Math.random()*colors.length)]
+  };
+}
+/* 每日状态机：跨天重置并生成首个藏身点；进度满但奖励未落账时靠幂等键补发（不双发）。返回是否改动了状态 */
+function junimoEnsureToday(){
+  var today=todayStr();var j=S.junimo;var changed=false;
+  if(!j||typeof j!=="object"||Array.isArray(j)){S.junimo={date:"",catches:0,spot:null,rewarded:false};j=S.junimo;changed=true;}
+  if(j.date!==today){j.date=today;j.catches=0;j.rewarded=false;j.spot=null;changed=true;}
+  if(typeof j.catches!=="number"||isNaN(j.catches)||j.catches<0){j.catches=0;changed=true;}
+  if(j.catches>=3&&!j.rewarded){
+    addLedger("points",5,"捉迷藏奖励",today,"junimo:"+today);
+    j.rewarded=true;j.spot=null;changed=true;
+  }
+  if(j.rewarded){if(j.spot!==null){j.spot=null;changed=true;}}
+  else if(!junimoSpotValid(j.spot)){j.spot=junimoGenSpot(null);changed=true;}
+  return changed;
+}
+function junimoCornerStyle(corner){
+  var top="calc(112px + env(safe-area-inset-top,0px))",bot="calc(14px + env(safe-area-inset-bottom,0px))";
+  switch(corner){
+    case "tl":return "left:10px;top:"+top;
+    case "tr":return "right:10px;top:"+top;
+    case "bl":return "left:10px;bottom:"+bot;
+    default:return "right:138px;bottom:"+bot; /* br：向左避开右下角的悬浮小人占位 */
+  }
+}
+function junimoStarsHtml(){
+  var offs=[[-28,-22],[26,-26],[0,-38],[-32,4],[30,2]];var h="";
+  for(var i=0;i<offs.length;i++)h+='<span class="junimo-star" style="--jx:'+offs[i][0]+'px;--jy:'+offs[i][1]+'px;animation-delay:'+(i*0.05)+'s">'+pixIcon("star",14)+'</span>';
+  return h;
+}
+var junimoFx=null,junimoHintTimer=null,junimoHintToken=0;
+function renderJunimoLayer(){
+  var root=document.getElementById("junimo-root");if(!root)return;
+  if(junimoHintTimer){clearTimeout(junimoHintTimer);junimoHintTimer=null;}
+  var token=++junimoHintToken;
+  if(junimoFx){
+    root.innerHTML='<div class="junimo-fx" style="'+junimoCornerStyle(junimoFx.corner)+'" aria-hidden="true"><span class="junimo-jump">'+junimoSvg(junimoFx.color,46)+'</span>'+junimoStarsHtml()+'</div>';
+    return;
+  }
+  var j=S.junimo;
+  if(!j||j.rewarded||(j.catches||0)>=3||!j.spot||j.spot.page!==ui.page||document.body.classList.contains("locked")){root.innerHTML="";return;}
+  root.innerHTML='<button type="button" id="junimo" data-act="junimo-catch" aria-label="抓祝尼魔" style="'+junimoCornerStyle(j.spot.corner)+'">'+junimoSvg(j.spot.color,46)+'</button>';
+  /* 停留超过 25 秒没点中：探头晃一下递个眼神，之后每 25 秒最多一次 */
+  var armHint=function(){
+    junimoHintTimer=setTimeout(function(){
+      if(token!==junimoHintToken)return;
+      var el=document.getElementById("junimo");
+      if(el){el.classList.remove("junimo-peek");void el.offsetWidth;el.classList.add("junimo-peek");}
+      armHint();
+    },25000);
+  };
+  armHint();
+}
+function catchJunimo(){
+  var j=S.junimo;
+  if(!j||!j.spot||j.spot.page!==ui.page||j.rewarded||(j.catches||0)>=3)return;
+  var fx={corner:j.spot.corner,color:j.spot.color};
+  mutate(function(){
+    j.catches=Math.min(3,(j.catches||0)+1);
+    if(j.catches>=3){
+      j.rewarded=true;j.spot=null;
+      addLedger("points",5,"捉迷藏奖励",todayStr(),"junimo:"+todayStr());
+      return [{icon:"star",title:"抓到祝尼魔啦（3/3）",sub:"+5 积分已到账，它回窝里休息了",small:true}];
+    }
+    j.spot=junimoGenSpot(j.spot.page); /* 强制换页，逼玩家逛页面 */
+    return [{icon:"star",title:"抓到祝尼魔啦（"+j.catches+"/3）",sub:"它又躲到别的页面去了",small:true}];
+  });
+  junimoFx=fx;renderJunimoLayer();
+  setTimeout(function(){if(junimoFx===fx){junimoFx=null;renderJunimoLayer();}},720);
+}
+/* 今日页宠物角：休息态祝尼魔 + 今日状态事实字 */
+function junimoPetHtml(){
+  var j=S.junimo||{catches:0,rewarded:false};
+  var status;
+  if(j.rewarded)status="今天抓满啦，+5 分已到账，它回窝里休息了。";
+  else if((j.catches||0)>0)status="今日捉迷藏 "+j.catches+"/3";
+  else status="今天还没开局，去各个页面逛逛，它可能躲在角落里。";
+  return '<div style="display:flex;align-items:center;gap:12px">'
+    +'<button type="button" class="junimo-petbtn" id="junimo-pet" data-act="junimo-pet" aria-label="摸摸祝尼魔">'+junimoSvg("green",54)+'</button>'
+    +'<p class="small" style="margin:0">'+esc(status)+"</p></div>";
+}
+function junimoPetWave(){
+  var el=document.getElementById("junimo-pet");if(!el)return;
+  el.classList.remove("junimo-wave");void el.offsetWidth;el.classList.add("junimo-wave");
 }
 
 /* ============ 台词库（与托管版同一套语料） ============ */
@@ -582,7 +727,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[]
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -640,6 +785,12 @@ function normalizeState(){
     if(typeof fr.birthMonth!=="number")fr.birthMonth=Number(fr.birthMonth)||1;
     if(typeof fr.birthDay!=="number")fr.birthDay=Number(fr.birthDay)||1;
   });
+  if(!S.junimo||typeof S.junimo!=="object"||Array.isArray(S.junimo))S.junimo={date:"",catches:0,spot:null,rewarded:false};
+  if(typeof S.junimo.date!=="string")S.junimo.date="";
+  if(typeof S.junimo.catches!=="number"||isNaN(S.junimo.catches)||S.junimo.catches<0)S.junimo.catches=0;
+  S.junimo.catches=Math.min(3,Math.floor(S.junimo.catches));
+  if(S.junimo.rewarded===undefined)S.junimo.rewarded=false;
+  if(S.junimo.spot!==null&&!junimoSpotValid(S.junimo.spot))S.junimo.spot=null;
   if(typeof S._profileUAt!=="number")S._profileUAt=0;
 }
 var S;
@@ -832,6 +983,21 @@ function mergeStates(L,R){
     });
   });
   out.newsDays=ndOrder.map(function(dt){return ndMap[dt];}).sort(function(a,b){return a.date<b.date?-1:(a.date>b.date?1:0);});
+  /* 祝尼魔捉迷藏：同 date 取 catches 较大者（rewarded 取 OR，藏身点跟 catches 大的那份走，防进度被合回去）；date 不同取较新 date 整份 */
+  var lj=(L.junimo&&typeof L.junimo==="object")?L.junimo:null,rj=(R.junimo&&typeof R.junimo==="object")?R.junimo:null;
+  if(lj||rj){
+    var jp;
+    if(lj&&rj&&lj.date&&lj.date===rj.date){
+      var lc2=lj.catches||0,rc2=rj.catches||0;
+      var jsrc=lc2>=rc2?lj:rj;
+      jp={date:lj.date,catches:Math.max(lc2,rc2),rewarded:!!(lj.rewarded||rj.rewarded),spot:jsrc.spot||null};
+      if(jp.rewarded||jp.catches>=3)jp.spot=null;
+    }else{
+      var jnew=(lj&&rj)?((String(lj.date||"")>String(rj.date||""))?lj:rj):(lj||rj);
+      jp={date:jnew.date||"",catches:jnew.catches||0,rewarded:!!jnew.rewarded,spot:jnew.spot||null};
+    }
+    out.junimo=jp;
+  }
   var cutoff=Date.now()-90*86400000;
   out._del=Object.keys(delMap).map(function(k){return delMap[k];}).filter(function(t){return t.ts>cutoff;});
   /* 档案取 uAt 较新者；成就取并集保留最早解锁日；已购道具取并集 */
@@ -2379,6 +2545,7 @@ function lifePage(){
     +'<button type="button" class="pix-btn" data-act="go" data-page="achievements"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("trophy",16)+" 成就图鉴（"+Object.keys(S.unlocked).length+"/"+ACHIEVEMENTS.length+"）</span></button>"
     +'<button type="button" class="pix-btn" data-act="go" data-page="shop"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("shop",16)+" 奖励商店（"+S.wallet.points+" 分）</span></button>"
     +'<button type="button" class="pix-btn" data-act="go" data-page="profile"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("card",16)+" 个人简介</span></button></div>");
+  h+=panel("宠物角","sprout",junimoPetHtml());
   h+='<div id="evening-news">'+panel("鹈鹕报道","news",newsSectionHtml())+"</div>";
   h+="</div>";
   return h;
@@ -4241,6 +4408,7 @@ function renderSplash(){
     +'<span style="position:absolute;top:-11px;right:16px">'+rectsSvg(LEAF_CLUSTER,"0 0 5 5",21)+'</span>'
     +'<span style="position:absolute;bottom:-9px;right:42px">'+rectsSvg(LEAF_CLUSTER,"0 0 5 5",17)+'</span>'
     +nails
+    +'<span aria-hidden="true" style="position:absolute;left:-22px;bottom:-12px;transform:rotate(-7deg)">'+junimoSvg("green",40)+'</span>'
     +'<div style="display:flex;align-items:center;justify-content:center;gap:3px" role="img" aria-label="番鼠农场">'+letters+"</div>"
     +"</div></div></div>"
     +'<button type="button" id="splash-enter" style="margin-top:38px;padding:13px 34px;background:#7a4a1c;border:3px solid #4a2c14;border-radius:0;box-shadow:5px 5px 0 #3a2110;cursor:pointer;line-height:0" aria-label="进入农场"><img alt="" src="'+btnText+'" style="height:27px;width:auto;image-rendering:pixelated;display:block"></button>'
@@ -4311,9 +4479,10 @@ var lastRenderPage=null;
 function render(){
   document.body.dataset.skin=S.profile.activeSkin||"default";
   if(ensureCycleSupply())save();
+  if(junimoEnsureToday())save();
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
-  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();
+  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();
   if(keepScroll)window.scrollTo(0,y);
   restoreEditState(cap);
   lastRenderPage=ui.page;
@@ -4371,6 +4540,8 @@ document.addEventListener("click",function(e){
     case "drawer-close":ui.drawer=false;renderDrawer();break;
     case "collapse":ui.collapsed=!ui.collapsed;renderSidebar();break;
     case "banner-close":bannerQueue.shift();renderBanner();break;
+    case "junimo-catch":catchJunimo();break;
+    case "junimo-pet":junimoPetWave();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
     /* 待办 */
