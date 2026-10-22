@@ -882,7 +882,7 @@ function scheduleSync(){
 function syncNow(){
   if(!session){setSyncMode("nologin");return;}
   if(sync.pushing)return;
-  if(!navigator.onLine){setSyncMode("offline");return;}
+  if(!navigator.onLine){setSyncMode("offline");var cso=checkClearStreak();if(cso){persistLocal();pushBanners([cso]);}return;}
   sync.pushing=true;setSyncMode("syncing");
   cloudPull().then(function(row){
     sync.lastPullAt=Date.now();
@@ -895,6 +895,8 @@ function syncNow(){
     }
     meta.updatedAt=Date.now();persistLocal();render();renderCompanion();
     if(added>0)pushBanners([{icon:"inbox",title:"已和云端合并 · 补进来 "+added+" 条记录",sub:"两台设备的记录都保留了",small:true}]);
+    var css=checkClearStreak();
+    if(css){persistLocal();pushBanners([css]);}
     var genAtPush=sync.gen;
     return cloudPush().then(function(){
       sync.pushing=false;
@@ -1112,13 +1114,29 @@ function todayScope(){
 /* 今日全清：今日范围内的事全办完（至少一项）+20 G，每日一次 */
 function checkDayClear(){
   var today=todayStr();
-  if(ledgerHas("今日全清奖励",today))return null;
+  if(ledgerHas("今日全清奖励",today))return checkClearStreak();
   var sc=todayScope();
   if(sc.total===0)return null;
   if(sc.todos.some(function(t){return !t.done;}))return null;
   if(sc.work.length>0)return null;
   addLedger("gold",20,"今日全清奖励",today);
   return {kind:"dayClear",title:"今天的事，都办完了。",sub:"+20 G",icon:"star",small:false};
+}
+/* 全清坚持奖励：连续全清满 7 天 +5 积分，断一天重数，每周封顶一次（幂等，周一起始）。
+   事实来源：账本中「今日全清奖励」的日期集合（每日至多一条）；幂等键 clear-streak:<本周周一>，
+   addLedger 按 idem 拦截、合并时也按 idem 去重，两台设备不会双发。 */
+function checkClearStreak(){
+  var today=todayStr();
+  var clearDays={};
+  S.ledger.forEach(function(l){if(l.reason==="今日全清奖励")clearDays[l.date]=true;});
+  if(!clearDays[today])return null;
+  var streak=0,d=today;
+  while(clearDays[d]){streak++;d=shiftDate(d,-1);}
+  if(streak<7)return null;
+  var idem="clear-streak:"+weekStartOf(today);
+  if(S.ledger.some(function(l){return l.idem===idem;}))return null;
+  addLedger("points",5,"全清坚持奖励",today,idem);
+  return {kind:"clearStreak",title:"连续全清满 7 天",sub:"+5 积分",icon:"star",small:true};
 }
 /* 页面情境分档（给悬浮小人挑台词用） */
 var LOW_MOODS={depressed:1,nervous:1,sleepy:1};
@@ -1261,6 +1279,7 @@ function mutate(fn,opts){
   opts=opts||{};
   var banners=fn()||[];
   var fresh=checkAchievements();
+  var cs=checkClearStreak();
   save();
   render();
   if(banners.length){
@@ -1271,6 +1290,7 @@ function mutate(fn,opts){
     pushBanners(fresh.map(function(a){return{icon:"star",title:"新成就："+a.name,sub:a.quote,small:false};}));
     companionCongrats();
   }
+  if(cs)pushBanners([cs]);
   if(opts.say)companionSay(opts.say);
 }
 
