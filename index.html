@@ -969,6 +969,7 @@ function normalizeState(){
     if(fr.giftIdeas===undefined)fr.giftIdeas="";
     if(fr.note===undefined)fr.note="";
     if(fr.name===undefined)fr.name="";
+    if(!Array.isArray(fr.events))fr.events=[];
     if(typeof fr.birthMonth!=="number")fr.birthMonth=Number(fr.birthMonth)||1;
     if(typeof fr.birthDay!=="number")fr.birthDay=Number(fr.birthDay)||1;
   });
@@ -1198,6 +1199,24 @@ function mergeStates(L,R){
     dates.sort();
     out.catPet={dates:dates};
   })();
+  /* 朋友互动事件：记录本体按 uAt 取胜者会丢掉另一台的事件，这里按 (date+type+bday) 复合键并集去重，两边独有都保留；好感全部派生、不存计数器 */
+  out.friends.forEach(function(fr){
+    var lf=null,rf=null;
+    (Array.isArray(L.friends)?L.friends:[]).forEach(function(x){if(x&&x.id===fr.id)lf=x;});
+    (Array.isArray(R.friends)?R.friends:[]).forEach(function(x){if(x&&x.id===fr.id)rf=x;});
+    var fseen={},fevs=[];
+    [lf,rf].forEach(function(src){
+      if(!src||!Array.isArray(src.events))return;
+      src.events.forEach(function(e){
+        if(!e||typeof e.date!=="string"||FRIEND_EVT_POINTS[e.type]==null)return;
+        var k=e.date+"|"+e.type+"|"+(e.bday?1:0);
+        if(fseen[k])return;fseen[k]=1;
+        var ne={date:e.date,type:e.type};if(e.bday)ne.bday=true;fevs.push(ne);
+      });
+    });
+    fevs.sort(function(a,b){return a.date<b.date?-1:(a.date>b.date?1:0);});
+    fr.events=fevs;
+  });
   /* 汤圆养护：逐项合并——一边为空取非空者；都非空且不同取 uAt 较晚者；uAt 相同（或都缺）取较早到期日 */
   (function(){
     function pick(lv,lu,rv,ru){
@@ -2401,6 +2420,48 @@ function saveFriend(id,vals){
   else{var f=findById(S.friends,id);if(f){Object.assign(f,vals);touch(f);}}
 }
 function deleteFriend(id){tombstone("friends","i:"+id);S.friends=S.friends.filter(function(f){return f.id!==id;});}
+/* ============ 朋友好感度：事件记录 + 全部派生（不存计数器） ============ */
+var FRIEND_EVT_POINTS={contact:1,meet:2,gift:3};
+var FRIEND_EVT_LABEL={contact:"联系",meet:"见面聚餐",gift:"送礼"};
+function friendEvents(f){if(!f||!Array.isArray(f.events))return [];return f.events.filter(function(e){return e&&typeof e.date==="string"&&FRIEND_EVT_POINTS[e.type]!=null;});}
+function friendEventPoints(e){if(!e)return 0;if(e.type==="gift"&&e.bday)return 6;return FRIEND_EVT_POINTS[e.type]||0;}
+function friendAffinity(f){return friendEvents(f).reduce(function(a,e){return a+friendEventPoints(e);},0);}
+function friendHearts(f){return Math.min(10,Math.floor(friendAffinity(f)/4));}
+function friendLastDate(f){var evs=friendEvents(f);if(!evs.length)return null;var mx=evs[0].date;evs.forEach(function(e){if(e.date>mx)mx=e.date;});return mx;}
+function friendIdleDays(f,today){var last=friendLastDate(f);if(!last)return null;return daysUntil(last,today);}
+function friendDusty(f,today){var d=friendIdleDays(f,today);return d!=null&&d>30;}
+/* 某公历日期是否这位朋友的生日当天：公历按档案月日比对（2 月 29 日在平年按 2 月 28 日，与 nextBirthdayOf 同口径）；农历走 nextBirthdayOf 的现有农历换算口径比对 */
+function friendBirthdayOn(f,dateStr){
+  if(!f||!dateStr)return false;
+  if(f.calType==="lunar"){var nb=nextBirthdayOf(f,dateStr);return !!nb.date&&nb.date===dateStr;}
+  var p=dateStr.split("-").map(Number);var m=Number(f.birthMonth)||1,d=Number(f.birthDay)||1;
+  if(m===2&&d===29&&daysInMonth(p[0],1)===28)d=28;
+  return p[1]===m&&p[2]===d;
+}
+/* 记一条互动事件（日期=今天）：同日同类型同 bday 标记已记过则返回 dup、不重复记（防误点双记）；
+   送礼的 bday：当天正是生日（自动判定）或手动勾了「生日礼物」任一命中即 bday:true，派生按 6 分 */
+function recordFriendEvent(id,type,bdayChecked){
+  var f=findById(S.friends,id);if(!f||FRIEND_EVT_POINTS[type]==null)return{ok:false};
+  var today=todayStr();
+  var bday=type==="gift"&&(!!bdayChecked||friendBirthdayOn(f,today));
+  if(!Array.isArray(f.events))f.events=[];
+  var dup=friendEvents(f).some(function(e){return e.date===today&&e.type===type&&!!e.bday===bday;});
+  if(dup)return{ok:false,dup:true};
+  var ev={date:today,type:type};if(bday)ev.bday=true;
+  f.events.push(ev);touch(f);
+  return{ok:true,bday:bday};
+}
+function friendHeartsHtml(f,dusty){
+  var n=friendHearts(f),s="";
+  for(var i=0;i<10;i++)s+=pixIcon(i<n?"heart":"heartEmpty",15);
+  return '<span style="display:inline-flex;gap:2px;flex-wrap:nowrap'+(dusty?";filter:grayscale(.85);opacity:.55":"")+'" role="img" aria-label="好感 '+n+' 心">'+s+"</span>";
+}
+/* 蒙尘名单：有互动记录且距最近一次 >30 天，按天数最久排序取前 3；从无记录者不入列 */
+function friendDustList(today){
+  return S.friends.map(function(f){return{f:f,days:friendIdleDays(f,today)};})
+    .filter(function(x){return x.days!=null&&x.days>30;})
+    .sort(function(a,b){return b.days-a.days;}).slice(0,3);
+}
 /* 积分模板包：同名跳过，其余逐条新建（uAt 递增防同步冲突）；返回 {added, skipped} */
 function addRewardTemplates(){
   var names={};S.shopRewards.forEach(function(r){names[r.name]=1;});
@@ -2721,7 +2782,7 @@ var ui={
   workFocus:null,tvChannel:"weather",tvTipShift:0,
   planFollow:true,reviewFollow:true,newsFollow:true,
   workList:{office:{q:"",status:"未完成"},medical:{q:"",status:"未完成",district:"全部",soon:false},cert:{q:"",status:"未完成",district:"全部",soon:false}},
-  shopMsg:""
+  shopMsg:"",friendMsg:""
 };
 function panel(title,icon,inner,extra){
   return '<section class="wood-panel panel"'+(extra||"")+">"
@@ -3615,6 +3676,12 @@ function lifePage(){
         return '<button type="button" class="paper-panel" style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;font-family:inherit;color:inherit;text-align:left;background:#fdf3c9" data-act="go" data-page="friends" aria-label="今天是 '+esc(f.name)+' 的生日，去朋友档案">'+pixIcon("cake",30)+storedIcon(f.avatar,36,"farmer")+'<span class="small"><b>今天是 '+esc(f.name)+' 的生日。</b><br><span class="dim">'+dp[0]+" 年 "+dp[1]+" 月 "+dp[2]+" 日（公历）</span></span></button>";
       }
       return '<div class="small" style="display:flex;align-items:center;gap:8px;padding:2px 0">'+storedIcon(f.avatar,20,"farmer")+"<span>还有 "+nb.daysLeft+" 天 · "+dp[1]+" 月 "+dp[2]+" 日 是 "+esc(f.name)+" 的生日（公历）</span></div>";
+    }).join(""));
+  }
+  var dustList=friendDustList(today);
+  if(dustList.length>0){
+    h+=panel("朋友互动","heart",dustList.map(function(x){
+      return '<div class="small" style="display:flex;align-items:center;gap:8px;padding:2px 0">'+storedIcon(x.f.avatar,20,"farmer")+"<span>和 "+esc(x.f.name)+" 已经 "+x.days+" 天没有互动了</span></div>";
     }).join(""));
   }
   h+=todayFestivalHtml(today); h+=winterGiftHtml(today);
@@ -5207,10 +5274,13 @@ function friendsPage(){
   var list=S.friends.map(function(f){return{f:f,nb:nextBirthdayOf(f,today)};})
     .sort(function(a,b){return (a.nb.daysLeft==null?99999:a.nb.daysLeft)-(b.nb.daysLeft==null?99999:b.nb.daysLeft);});
   var inner='<button type="button" class="pix-btn pix-btn-green" style="margin-bottom:12px" data-act="friend-new" aria-label="添加朋友">＋ 添加朋友</button>'
+    +(ui.friendMsg?'<p class="small paper-panel" role="status" style="padding:8px 12px;margin:0 0 12px">'+esc(ui.friendMsg)+"</p>":"")
     +(list.length===0
       ?emptyState("cake","还没有朋友档案。把朋友的生日记下来，提前 3 天会在今日页提醒。")
       :'<div class="stack" style="gap:10px">'+list.map(function(x){
         var f=x.f,nb=x.nb;
+        var fevs=friendEvents(f),faff=friendAffinity(f),fidle=friendIdleDays(f,today),fdusty=friendDusty(f,today);
+        var frecent=fevs.slice().sort(function(a,b){return a.date<b.date?1:(a.date>b.date?-1:0);}).slice(0,5);
         var dp=nb.date?nb.date.split("-").map(Number):null;
         var calTxt=f.calType==="lunar"?("农历 "+f.birthMonth+" 月 "+f.birthDay+" 日"):("公历 "+f.birthMonth+" 月 "+f.birthDay+" 日");
         return '<article class="paper-panel" style="padding:12px">'
@@ -5223,6 +5293,19 @@ function friendsPage(){
           +(f.likes?'<p class="small" style="margin:4px 0 0">喜好：'+esc(f.likes)+"</p>":"")
           +(f.giftIdeas?'<p class="small" style="margin:4px 0 0">送礼想法：'+esc(f.giftIdeas)+"</p>":"")
           +(f.note?'<p class="small" style="margin:4px 0 0">备注：'+esc(f.note)+"</p>":"")
+          +'<div style="margin-top:10px;border-top:1px dashed #d8c491;padding-top:10px">'
+          +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+friendHeartsHtml(f,fdusty)
+          +'<span class="small">好感值 <b class="font-num">'+faff+"</b></span>"
+          +(fidle==null?'<span class="small dim">还没有互动记录</span>':(fdusty?'<span class="small">已经 '+fidle+" 天没有互动了</span>":'<span class="small dim">最近互动：'+friendLastDate(f)+"</span>"))
+          +"</div>"
+          +'<div class="row wrap" style="gap:6px;margin-top:8px;align-items:center">'
+          +'<button type="button" class="pix-btn" data-act="friend-evt" data-etype="contact" data-id="'+f.id+'" aria-label="记一次和 '+esc(f.name)+' 的联系">联系</button>'
+          +'<button type="button" class="pix-btn" data-act="friend-evt" data-etype="meet" data-id="'+f.id+'" aria-label="记一次和 '+esc(f.name)+' 的见面聚餐">见面聚餐</button>'
+          +'<button type="button" class="pix-btn" data-act="friend-evt" data-etype="gift" data-id="'+f.id+'" aria-label="记一次给 '+esc(f.name)+' 的送礼">送礼</button>'
+          +'<label class="small" style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="friend-bday-'+f.id+'" aria-label="这份礼物是生日礼物"> 生日礼物</label>'
+          +"</div>"
+          +(frecent.length?'<ul class="xs" style="list-style:none;margin:8px 0 0;padding:0">'+frecent.map(function(e){return '<li style="padding:1px 0">'+e.date+" · "+FRIEND_EVT_LABEL[e.type]+(e.bday?"（生日礼物）":"")+"</li>";}).join("")+"</ul>":"")
+          +"</div>"
           +"</article>";
       }).join("")+"</div>");
   return '<div class="stack">'+panel("朋友档案","heart",inner)+"</div>";
@@ -5914,6 +5997,16 @@ document.addEventListener("click",function(e){
     case "friend-new":friendEditorModal(null);break;
     case "friend-edit":{var ff=findById(S.friends,Number(el.dataset.id));if(ff)friendEditorModal(ff);break;}
     case "friend-del":e.stopPropagation();delWithUndo("朋友档案已删除",function(){deleteFriend(Number(el.dataset.id));});break;
+    case "friend-evt":{
+      var fevId=Number(el.dataset.id),fevType=el.dataset.etype||"";
+      var fevF=findById(S.friends,fevId);if(!fevF)break;
+      var fevBday=false;
+      if(fevType==="gift"){var fevCb=document.getElementById("friend-bday-"+fevId);fevBday=!!(fevCb&&fevCb.checked);}
+      var fevRes=null;
+      mutate(function(){fevRes=recordFriendEvent(fevId,fevType,fevBday);});
+      if(fevRes&&fevRes.dup)ui.friendMsg="今天已经记过一次「"+(FRIEND_EVT_LABEL[fevType]||"")+"」了，没有重复记。";
+      else if(fevRes&&fevRes.ok)ui.friendMsg="已记下："+todayStr()+" 和 "+fevF.name+" "+(FRIEND_EVT_LABEL[fevType]||"")+(fevRes.bday?"（生日礼物）":"")+"。";
+      render();break;}
     case "friend-avatar":{
       document.getElementById("friend-avatar").value=el.dataset.icon;
       document.querySelectorAll("#friend-avatar-picker button").forEach(function(b){b.classList.toggle("sel",b.dataset.icon===el.dataset.icon);b.setAttribute("aria-checked",b.dataset.icon===el.dataset.icon?"true":"false");});
