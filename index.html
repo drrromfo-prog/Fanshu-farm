@@ -141,9 +141,11 @@
       table.tbl td{padding:6px 8px 6px 0;border-bottom:1px dashed #b99b62;vertical-align:top;}
       .field{display:block;margin-bottom:12px;}
       .field>span{display:block;font-size:14px;font-weight:600;margin-bottom:4px;}
-      .modal-wrap{position:fixed;inset:0;z-index:130;display:flex;align-items:flex-end;justify-content:center;padding:8px;background:rgba(46,26,8,.55);}
-      @media (min-width:640px){.modal-wrap{align-items:center;padding:16px;}}
-      .modal-box{width:100%;max-width:448px;max-height:88vh;overflow-y:auto;overscroll-behavior:contain;padding:0;}
+      /* 弹窗层：z 150 压过顶栏(80)、抽屉(95)与角落小物（祝尼魔135/纸条134/采集133/陨石132），遮罩盖住全屏；
+         面板顶距取 --hud-h（syncHudVar 实测 HUD 高，含安全区），展开/收起两态下面板顶都够不到顶栏下沿 */
+      .modal-wrap{position:fixed;inset:0;z-index:150;display:flex;align-items:flex-end;justify-content:center;padding:8px;padding-top:calc(var(--hud-h,calc(72px + env(safe-area-inset-top,0px))) + 8px);background:rgba(46,26,8,.55);}
+      @media (min-width:640px){.modal-wrap{align-items:center;padding:16px;padding-top:calc(var(--hud-h,calc(72px + env(safe-area-inset-top,0px))) + 12px);}}
+      .modal-box{width:100%;max-width:448px;max-height:calc(100vh - var(--hud-h,calc(72px + env(safe-area-inset-top,0px))) - 24px);max-height:calc(100dvh - var(--hud-h,calc(72px + env(safe-area-inset-top,0px))) - 24px);overflow-y:auto;overscroll-behavior:contain;padding:0;}
       .modal-box.wide{max-width:672px;}
       .modal-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px 10px;background:linear-gradient(180deg,#fbebc0,#f7dd9a);border-bottom:2px solid rgba(74,44,20,.28);}
       .modal-body{padding:12px 16px 6px;}
@@ -192,7 +194,8 @@
       body.locked > header, body.locked > .shell, body.locked #companion-root{visibility:hidden;}
       .scroll-thin::-webkit-scrollbar{height:6px;width:6px;}
       .scroll-thin::-webkit-scrollbar-thumb{background:#6b3f1d;}
-      .banner-slot{position:fixed;left:0;right:0;top:calc(68px + env(safe-area-inset-top,0px));z-index:70;display:flex;justify-content:center;pointer-events:none;padding:0 12px;}
+      /* 轻提示统一容器：top 跟随 HUD 实测高度（--hud-h 由 syncHudVar 按展开/收起两态实时写入，含安全区），恒在顶栏下方 8px 完整显示 */
+      .banner-slot{position:fixed;left:0;right:0;top:calc(var(--hud-h,calc(68px + env(safe-area-inset-top,0px))) + 8px);z-index:70;display:flex;justify-content:center;pointer-events:none;padding:0 12px;}
       .banner-card{pointer-events:auto;display:flex;align-items:stretch;text-align:left;padding:0;overflow:hidden;width:min(430px,94vw);cursor:pointer;font-family:inherit;color:var(--text);}
       #companion{position:fixed;z-index:40;touch-action:none;}
       .bubble{background:#fff6da;border:2px solid #4a2c14;box-shadow:3px 3px 0 rgba(46,26,8,.45);border-radius:3px;position:absolute;width:256px;padding:12px;}
@@ -2240,6 +2243,7 @@ function gardenPanelHtml(active){
 /* ============ 庆祝横幅队列 ============ */
 var bannerQueue=[],bannerSeq=0,dayClearSeq=0,bannerTimer=null;
 function pushBanners(items){
+  syncHudVar(); /* 弹出前按当前 HUD 态（展开/收起）重新量一次高度，提示恒完整可见 */
   items.forEach(function(it){
     if(it.kind==="dayClear"){
       var sub=DAY_CLEAR_SUBS[dayClearSeq%DAY_CLEAR_SUBS.length];dayClearSeq++;
@@ -3262,6 +3266,8 @@ function emptyState(icon,text){
 }
 function tag(text,tone){return '<span class="pix-tag '+(tone||"")+'">'+text+"</span>";}
 function modal(title,inner,wide){
+  syncHudVar(); /* 弹出前按当前 HUD 态（展开/收起）重新量一次高度，面板顶距恒准确 */
+  setTimeout(syncHudVar,400); /* 若开弹窗时 HUD 恰在伸缩过渡中，待其 settled 后再校准一次（CSS 变量变化会让面板顶距自动跟正） */
   document.getElementById("modal-root").innerHTML=
    '<div class="modal-wrap" data-act="modal-backdrop" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'
    +'<div class="wood-panel modal-box bannerin'+(wide?" wide":"")+'" data-stop="1">'
@@ -4721,6 +4727,7 @@ function renderHud(){
     +'<button type="button" class="pix-btn pix-btn-ghost" data-act="search-open" aria-label="全局搜索" style="margin-left:auto"><span style="display:inline-flex;align-items:center;gap:4px">'+pixIcon("search",15)+" 搜索</span></button>"
     +'<span class="pix-tag sync-badge" style="'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span>'
     +randOwlHudHtml();
+  syncHudVar(); /* HUD 内容重绘后高度可能变化（称号/进度行），在重绘 settled 后校准 --hud-h */
 }
 function navButton(n,iconOnly){
   var active=ui.page===n.key;
@@ -7059,6 +7066,14 @@ function render(){
    只切 class、不触发 render，不干扰 render() 的滚动位置保留；状态挂在 header/body 上，renderHud 重绘不丢。 */
 var hudSlimState=false;
 var hudHeaderEl=document.querySelector(".app-header");
+/* 把 HUD 实测高度（offsetHeight 已含安全区 padding）写进 --hud-h：轻提示容器与弹窗面板顶距都据此定位，展开/收起两态都不会被顶栏压住 */
+function syncHudVar(){
+  if(!hudHeaderEl)hudHeaderEl=document.querySelector(".app-header");
+  if(!hudHeaderEl)return;
+  var h=hudHeaderEl.offsetHeight;
+  /* 下限 40：重绘瞬间 header 内容未填充时 offsetHeight 会短暂塌到约 21px，那不是任何真实 HUD 态（细条态亦 ≥49），不写入以免污染 --hud-h */
+  if(h>=40)document.documentElement.style.setProperty("--hud-h",h+"px");
+}
 function hudOnScroll(){
   if(!hudHeaderEl)hudHeaderEl=document.querySelector(".app-header");
   if(!hudHeaderEl)return;
@@ -7067,13 +7082,19 @@ function hudOnScroll(){
     hudSlimState=true;
     hudHeaderEl.classList.add("hud-slim");
     document.body.classList.add("hud-slim");
+    syncHudVar();setTimeout(syncHudVar,380);
   }else if(hudSlimState&&y<=6){
     hudSlimState=false;
     hudHeaderEl.classList.remove("hud-slim");
     document.body.classList.remove("hud-slim");
+    syncHudVar();setTimeout(syncHudVar,380);
   }
 }
 window.addEventListener("scroll",hudOnScroll,{passive:true});
+window.addEventListener("resize",syncHudVar);
+window.addEventListener("orientationchange",function(){syncHudVar();setTimeout(syncHudVar,380);});
+if(hudHeaderEl)hudHeaderEl.addEventListener("transitionend",syncHudVar);
+syncHudVar();
 
 /* ============ 事件委托 ============ */
 function toastShop(msg){ui.shopMsg=msg;}
