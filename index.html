@@ -246,6 +246,11 @@
       }
       /* 秘密纸条层（四件套）：层级 134，略低于祝尼魔层，同样压过顶栏(80)与弹窗(130) */
       #secretnote{position:fixed;z-index:134;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.6s ease-in-out infinite;}
+      /* 季节采集层：层级 133，低于纸条(134)与祝尼魔(135)，角位与晃动动画复用纸条/祝尼魔同一套 */
+      #forage-spot{position:fixed;z-index:133;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.4s ease-in-out infinite;}
+      @media (prefers-reduced-motion: reduce){
+        #forage-spot{animation:none!important;}
+      }
       .fest-mark{display:inline-flex;line-height:0;}
       /* 今日页四季轻氛围：小色点轻浮动（复用天气特效的视觉语言） */
       .season-amb{position:relative;height:14px;overflow:visible;pointer-events:none;margin-top:2px;}
@@ -290,6 +295,7 @@
     <div id="fx-layer" aria-hidden="true"></div>
     <div id="junimo-root"></div>
     <div id="secretnote-root"></div>
+    <div id="forage-root"></div>
     <div id="companion-root"></div>
     <script>
 "use strict";
@@ -1088,7 +1094,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},forage:{date:"",itemId:null,page:null,corner:null,found:[],uAt:0},forageDex:{},
     mail:[],quests:{week:"",pool:[],active:[],done:[]},catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
@@ -1126,6 +1132,9 @@ function normalizeState(){
   if(!S.notes||typeof S.notes!=="object"||Array.isArray(S.notes))S.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};
   if(!Array.isArray(S.notes.found))S.notes.found=[];
   if(!Array.isArray(S.notes.cycle))S.notes.cycle=[];
+  if(!S.forage||typeof S.forage!=="object"||Array.isArray(S.forage))S.forage={date:"",itemId:null,page:null,corner:null,found:[],uAt:0};
+  if(!Array.isArray(S.forage.found))S.forage.found=[];
+  if(!S.forageDex||typeof S.forageDex!=="object"||Array.isArray(S.forageDex))S.forageDex={};
   if(!Array.isArray(S._del))S._del=[];
   var cutoff=Date.now()-90*86400000;
   S._del=S._del.filter(function(t){return t&&typeof t.ts==="number"&&t.ts>cutoff;});
@@ -1486,6 +1495,10 @@ function mergeStates(L,R){
       out.notes=merged;
     }
   })();
+  /* 季节采集图鉴：收藏按季并集、当日藏点同 date 取较新（详见 mergeForageStates） */
+  var forageMerged=mergeForageStates(L,R);
+  out.forage=forageMerged.forage;
+  out.forageDex=forageMerged.forageDex;
   /* 技能升级发奖进度：每维取已发奖到的较高等级，防止两台设备合并后重复发奖 */
   (function(){
     var sg={};
@@ -3797,6 +3810,261 @@ function secretNotesArchiveHtml(){
   return panel("秘密纸条","scroll",inner);
 }
 
+/* ---------- 11.5 季节采集图鉴（成就图鉴页） ---------- */
+/* 与秘密纸条同族：藏点页面/角落复用 JUNIMO_PAGES / JUNIMO_CORNERS 白名单与 junimoCornerStyle 角位，
+   生成时同时避让当日祝尼魔藏点与纸条藏点（同页同角换开，优先换角不换页的口径落在抽选+兜底扫描上）；
+   当天没点到次日作废重抽（与纸条同口径）。往季不补采：藏点只出当季物，图鉴往季只能回看。
+   状态：S.forage={date,itemId,page,corner,found:[日期...],uAt}（当日藏点，found 为已采集日期列表）；
+   S.forageDex={seasonKey:[itemId...]}（图鉴收藏，seasonKey 口径同收集包 seasonKeyOf，冬季归 12 月所在年）。
+   合并：mergeForageStates——收藏按季并集（只留合法且季节相符的 id）；当日藏点同 date 取较新
+   （优先已采集那份，其次 uAt 大者，与纸条 notes 合并口径对齐），found 日期取并集。
+   集齐奖励：当季 6 件集齐 +20 分，幂等键 forage:<季键>，检测挂 render() 统一检查点（checkForageGrants）。 */
+var FORAGE_SEASONS=["spring","summer","autumn","winter"];
+var FORAGE_ITEMS=[
+  {id:"tea",season:"spring",name:"茶芽",icon:"fgTea"},
+  {id:"wildonion",season:"spring",name:"野葱",icon:"fgWildonion"},
+  {id:"dandelion",season:"spring",name:"蒲公英",icon:"fgDandelion"},
+  {id:"bambooshoot",season:"spring",name:"竹笋",icon:"fgBambooshoot"},
+  {id:"honey",season:"spring",name:"野花蜜",icon:"fgHoney"},
+  {id:"springfungi",season:"spring",name:"春菌",icon:"fgSpringfungi"},
+  {id:"peach",season:"summer",name:"桃",icon:"fgPeach"},
+  {id:"melon",season:"summer",name:"甜瓜",icon:"fgMelon"},
+  {id:"mint",season:"summer",name:"薄荷",icon:"fgMint"},
+  {id:"fireflygrass",season:"summer",name:"萤火草",icon:"fgFireflygrass"},
+  {id:"clam",season:"summer",name:"河蚌",icon:"fgClam"},
+  {id:"summerfungi",season:"summer",name:"夏菌",icon:"fgSummerfungi"},
+  {id:"chestnut",season:"autumn",name:"板栗",icon:"fgChestnut"},
+  {id:"persimmon",season:"autumn",name:"柿子",icon:"fgPersimmon"},
+  {id:"osmanthus",season:"autumn",name:"桂花",icon:"fgOsmanthus"},
+  {id:"wildpear",season:"autumn",name:"野梨",icon:"fgWildpear"},
+  {id:"chrysanthemum",season:"autumn",name:"菊花",icon:"fgChrysanthemum"},
+  {id:"autumnfungi",season:"autumn",name:"秋菌",icon:"fgAutumnfungi"},
+  {id:"winterbamboo",season:"winter",name:"冬笋",icon:"fgWinterbamboo"},
+  {id:"wintersweet",season:"winter",name:"腊梅",icon:"fgWintersweet"},
+  {id:"yacon",season:"winter",name:"雪莲果",icon:"fgYacon"},
+  {id:"hawthorn",season:"winter",name:"山楂",icon:"fgHawthorn"},
+  {id:"hollyberry",season:"winter",name:"冬青果",icon:"fgHollyberry"},
+  {id:"driedfungi",season:"winter",name:"干菌",icon:"fgDriedfungi"}
+];
+ICONS.fgTea=[[7,8,2,6,"#6d8a3f"],[3,5,5,3,"#7cb342"],[8,4,5,3,"#8bc34a"],[7,2,2,3,"#c5e1a5"]];
+ICONS.fgWildonion=[[4,3,1,9,"#66bb6a"],[7,2,1,10,"#43a047"],[10,3,1,9,"#66bb6a"],[3,12,9,2,"#f1f8e9"],[5,14,1,2,"#d7ccc8"],[9,14,1,2,"#d7ccc8"]];
+ICONS.fgDandelion=[[6,3,4,4,"#fdd835"],[5,2,6,1,"#ffeb3b"],[5,7,6,1,"#fbc02d"],[4,4,1,2,"#ffeb3b"],[11,4,1,2,"#ffeb3b"],[7,8,2,6,"#558b2f"],[4,12,3,2,"#7cb342"],[9,12,3,2,"#7cb342"]];
+ICONS.fgBambooshoot=[[6,12,4,2,"#8d6e63"],[5,9,6,3,"#a1887f"],[6,6,4,3,"#bcaaa4"],[7,3,2,3,"#d7ccc8"],[5,10,6,1,"#6d4c41"],[8,1,3,2,"#7cb342"]];
+ICONS.fgHoney=[[5,4,6,9,"#ffb300"],[4,2,8,2,"#8d6e63"],[6,6,2,4,"#ffe082"],[6,8,4,3,"#fff8e1"],[11,1,1,3,"#a5713d"]];
+ICONS.fgSpringfungi=[[3,4,10,4,"#b07a4a"],[5,2,6,2,"#c98f5f"],[5,5,2,1,"#f5e0c0"],[9,6,2,1,"#f5e0c0"],[6,8,4,5,"#efe0c8"],[3,13,10,1,"#7cb342"]];
+ICONS.fgPeach=[[5,3,6,1,"#ffccbc"],[4,4,8,8,"#ff9e80"],[5,12,6,1,"#ff8a65"],[7,5,1,6,"#e57373"],[8,1,4,2,"#66bb6a"],[7,2,1,2,"#6d4c41"]];
+ICONS.fgMelon=[[4,4,8,1,"#aed581"],[3,5,10,7,"#c5e1a5"],[4,12,8,1,"#aed581"],[5,5,1,7,"#8fbf6f"],[8,5,1,7,"#8fbf6f"],[11,5,1,7,"#8fbf6f"],[7,2,2,2,"#6d4c41"]];
+ICONS.fgMint=[[3,6,5,4,"#4caf50"],[8,5,5,4,"#66bb6a"],[5,10,6,4,"#43a047"],[5,7,1,2,"#c8e6c9"],[10,6,1,2,"#c8e6c9"],[7,13,2,2,"#388e3c"]];
+ICONS.fgFireflygrass=[[3,9,1,5,"#558b2f"],[6,7,1,7,"#689f38"],[9,8,1,6,"#558b2f"],[12,9,1,5,"#689f38"],[4,4,2,2,"#fff59d"],[10,3,2,2,"#ffee58"],[7,5,1,1,"#ffff8d"],[2,14,12,1,"#33691e"]];
+ICONS.fgClam=[[7,5,2,1,"#6d5c4d"],[4,6,8,2,"#a89f91"],[3,8,10,4,"#96897a"],[5,12,6,1,"#7a6a58"],[7,9,2,2,"#fdfdf5"],[2,14,12,1,"#7fb3d5"]];
+ICONS.fgSummerfungi=[[3,4,10,4,"#e05252"],[5,2,6,2,"#e57373"],[5,5,2,1,"#ffffff"],[9,6,1,1,"#ffffff"],[6,8,4,5,"#f7ead7"],[3,13,10,1,"#558b2f"]];
+ICONS.fgChestnut=[[4,3,8,3,"#7cb342"],[5,6,6,6,"#6d4c41"],[6,7,2,3,"#a1887f"],[6,12,4,1,"#e8dcc0"],[3,4,1,1,"#689f38"],[12,4,1,1,"#689f38"]];
+ICONS.fgPersimmon=[[5,4,6,1,"#ffa65c"],[4,5,8,7,"#ff8a3d"],[5,12,6,1,"#f2762e"],[5,2,6,2,"#558b2f"],[7,1,2,1,"#33691e"],[6,7,2,3,"#ffb37e"]];
+ICONS.fgOsmanthus=[[7,1,1,6,"#6d4c41"],[3,3,4,2,"#558b2f"],[9,4,4,2,"#689f38"],[4,7,2,2,"#ffb300"],[7,9,2,2,"#ffa000"],[10,7,2,2,"#ffb300"],[6,6,1,1,"#ffca28"],[9,10,1,1,"#ffca28"],[5,11,1,1,"#ffb300"]];
+ICONS.fgWildpear=[[6,3,4,3,"#e3d06b"],[4,6,8,6,"#d4b93e"],[5,12,6,1,"#c2a636"],[7,1,2,2,"#6d4c41"],[8,2,4,2,"#66bb6a"],[6,8,1,1,"#a98f2e"],[9,10,1,1,"#a98f2e"]];
+ICONS.fgChrysanthemum=[[4,3,8,4,"#ffd54f"],[6,1,4,2,"#ffecb3"],[6,8,4,2,"#f0a832"],[7,4,2,2,"#f09c1e"],[7,9,2,5,"#558b2f"],[4,11,3,2,"#689f38"],[9,12,3,2,"#689f38"]];
+ICONS.fgAutumnfungi=[[3,4,10,4,"#e08a3c"],[5,2,6,2,"#eda758"],[4,8,8,1,"#f5deb3"],[6,9,4,4,"#f0e2c4"],[6,10,4,1,"#d9b98a"],[2,13,3,1,"#c97b2e"],[11,13,3,1,"#a85f24"]];
+ICONS.fgWinterbamboo=[[6,12,4,2,"#a1887f"],[5,9,6,3,"#bcaaa4"],[6,6,4,3,"#d7ccc8"],[7,3,2,3,"#efebe9"],[5,10,6,1,"#8d6e63"],[3,13,3,1,"#ffffff"],[2,14,12,1,"#eef4f8"]];
+ICONS.fgWintersweet=[[3,12,1,1,"#5d4037"],[5,10,1,1,"#5d4037"],[7,8,1,1,"#5d4037"],[9,6,1,1,"#5d4037"],[11,4,1,1,"#5d4037"],[2,8,3,3,"#fdd835"],[6,5,3,3,"#ffee58"],[10,2,3,3,"#fdd835"],[8,11,3,3,"#ffeb3b"],[3,9,1,1,"#f09c1e"],[7,6,1,1,"#f09c1e"],[11,3,1,1,"#f09c1e"]];
+ICONS.fgYacon=[[6,4,4,1,"#e8cda0"],[5,5,6,8,"#d9b380"],[6,13,4,1,"#c49a68"],[7,7,1,1,"#b0824f"],[9,10,1,1,"#b0824f"],[7,2,2,2,"#7cb342"],[6,5,4,1,"#f7ead7"]];
+ICONS.fgHawthorn=[[7,2,1,3,"#6d4c41"],[8,1,5,2,"#558b2f"],[4,5,4,4,"#d23c2e"],[8,4,4,4,"#e05240"],[6,8,4,4,"#c23327"],[5,6,1,1,"#7a1d14"],[9,5,1,1,"#7a1d14"],[5,5,1,1,"#ff9a8a"]];
+ICONS.fgHollyberry=[[2,4,6,4,"#2e7d32"],[8,8,6,4,"#388e3c"],[3,9,5,3,"#33691e"],[6,6,3,3,"#d32f2f"],[10,5,2,2,"#e53935"],[5,10,2,2,"#c62828"],[7,7,1,1,"#ffcdd2"]];
+ICONS.fgDriedfungi=[[7,0,1,3,"#bcaaa4"],[4,5,8,3,"#9a7a52"],[6,3,4,2,"#ab8a5e"],[5,6,1,1,"#6d5133"],[9,6,1,1,"#6d5133"],[7,8,2,4,"#c9b18c"],[8,12,3,1,"#b39a72"]];
+ICONS.fgBadge=[[6,1,4,2,"#e05252"],[5,3,6,5,"#ffd83d"],[6,4,4,3,"#f0a832"],[7,5,2,1,"#fff3b0"],[5,8,2,5,"#3a6ea8"],[9,8,2,5,"#2c4a73"]];
+function forageDefOf(id){for(var i=0;i<FORAGE_ITEMS.length;i++)if(FORAGE_ITEMS[i].id===id)return FORAGE_ITEMS[i];return null;}
+function forageItemsOfSeason(season){return FORAGE_ITEMS.filter(function(it){return it.season===season;});}
+function forageDexList(key){
+  var d=S.forageDex;if(!d||typeof d!=="object"||Array.isArray(d))return [];
+  var a=d[key];return Array.isArray(a)?a:[];
+}
+function forageCollectedToday(){
+  var f=S.forage;if(!f||!Array.isArray(f.found))return false;
+  return f.date===todayStr()&&f.found.indexOf(f.date)>=0;
+}
+/* 当前被占用的藏点（祝尼魔活动藏点 + 今日未找到的纸条藏点），采集藏点生成/修复时避让 */
+function forageBlockedSpots(){
+  var out=[];var today=todayStr();
+  var j=S.junimo;
+  if(j&&j.spot&&j.date===today&&!j.rewarded&&(j.catches||0)<3)out.push({page:j.spot.page,corner:j.spot.corner});
+  var n=S.notes;
+  if(n&&n.date===today&&n.page&&n.corner&&!noteFoundToday())out.push({page:n.page,corner:n.corner});
+  return out;
+}
+function foragePlaceSpot(f){
+  var blocked=forageBlockedSpots();
+  function hit(pg,cn){for(var i=0;i<blocked.length;i++)if(blocked[i].page===pg&&blocked[i].corner===cn)return true;return false;}
+  for(var t=0;t<16;t++){
+    var pg=JUNIMO_PAGES[Math.floor(Math.random()*JUNIMO_PAGES.length)];
+    var cn=JUNIMO_CORNERS[Math.floor(Math.random()*JUNIMO_CORNERS.length)];
+    if(hit(pg,cn))continue; /* 与祝尼魔/纸条同页同角则换开 */
+    f.page=pg;f.corner=cn;return;
+  }
+  /* 16 次没抽中：全表扫描第一个不冲突的页角（页角总数远多于占用数，必有空位） */
+  for(var i=0;i<JUNIMO_PAGES.length;i++){
+    for(var k=0;k<JUNIMO_CORNERS.length;k++){
+      if(!hit(JUNIMO_PAGES[i],JUNIMO_CORNERS[k])){f.page=JUNIMO_PAGES[i];f.corner=JUNIMO_CORNERS[k];return;}
+    }
+  }
+  f.page=JUNIMO_PAGES[0];f.corner=JUNIMO_CORNERS[0];
+}
+/* 同页换角（修复时优先换角不换页）：返回该页一个不冲突且不同于现角的角，没有则 null */
+function forageFreeCornerOn(page,cur){
+  var blocked=forageBlockedSpots();
+  for(var k=0;k<JUNIMO_CORNERS.length;k++){
+    var cn=JUNIMO_CORNERS[k];if(cn===cur)continue;
+    var hit=false;
+    for(var i=0;i<blocked.length;i++)if(blocked[i].page===page&&blocked[i].corner===cn)hit=true;
+    if(!hit)return cn;
+  }
+  return null;
+}
+function forageCleanDex(){
+  var changed=false;
+  if(!S.forageDex||typeof S.forageDex!=="object"||Array.isArray(S.forageDex)){S.forageDex={};changed=true;}
+  Object.keys(S.forageDex).forEach(function(k){
+    var arr=S.forageDex[k];
+    if(!Array.isArray(arr)){S.forageDex[k]=[];changed=true;return;}
+    var seen={},clean=[];
+    arr.forEach(function(id){var d=forageDefOf(id);if(d&&d.season===k.split("-")[1]&&!seen[id]){seen[id]=1;clean.push(id);}});
+    if(clean.length!==arr.length)changed=true;
+    S.forageDex[k]=clean;
+  });
+  return changed;
+}
+function forageEnsureToday(){
+  var today=todayStr();var changed=false;
+  if(!S.forage||typeof S.forage!=="object"||Array.isArray(S.forage)){S.forage={date:"",itemId:null,page:null,corner:null,found:[],uAt:0};changed=true;}
+  var f=S.forage;
+  if(!Array.isArray(f.found)){f.found=[];changed=true;}
+  if(forageCleanDex())changed=true;
+  var key=seasonKeyOf(today);var season=key.split("-")[1];
+  var dex=forageDexList(key);
+  var remaining=forageItemsOfSeason(season).filter(function(it){return dex.indexOf(it.id)<0;});
+  if(f.date!==today){
+    /* 跨日作废重抽：只出当季未采集件；当季已集齐则从当季随机一件重复出现，点到只作纪念 */
+    var pool=remaining.length>0?remaining:forageItemsOfSeason(season);
+    var pick=pool[Math.floor(Math.random()*pool.length)];
+    f.date=today;f.itemId=pick.id;
+    foragePlaceSpot(f);
+    f.uAt=Date.now();changed=true;
+    return changed;
+  }
+  /* 同日修复：藏点物非法/已不在当季/已被合并进图鉴且还有未采集件时，换一件未采集的（位置不动） */
+  var def=forageDefOf(f.itemId);
+  if(!def||def.season!==season||(dex.indexOf(f.itemId)>=0&&remaining.length>0)){
+    var pool2=remaining.length>0?remaining:forageItemsOfSeason(season);
+    f.itemId=pool2[Math.floor(Math.random()*pool2.length)].id;
+    changed=true;
+  }
+  if(JUNIMO_PAGES.indexOf(f.page)<0||JUNIMO_CORNERS.indexOf(f.corner)<0){
+    foragePlaceSpot(f);changed=true;
+  }else{
+    /* 与祝尼魔/纸条藏点撞页撞角（多设备合并后可能出现）：优先换角、不换页 */
+    var blocked=forageBlockedSpots();var clash=false;
+    for(var i=0;i<blocked.length;i++)if(blocked[i].page===f.page&&blocked[i].corner===f.corner)clash=true;
+    if(clash){
+      var nc=forageFreeCornerOn(f.page,f.corner);
+      if(nc)f.corner=nc;else foragePlaceSpot(f);
+      changed=true;
+    }
+  }
+  if(changed)f.uAt=Date.now();
+  return changed;
+}
+function renderForageLayer(){
+  var root=document.getElementById("forage-root");if(!root)return;
+  var f=S.forage;
+  if(!f||!f.itemId||!f.page||f.page!==ui.page||f.date!==todayStr()||forageCollectedToday()||document.body.classList.contains("locked")){root.innerHTML="";return;}
+  var def=forageDefOf(f.itemId);if(!def){root.innerHTML="";return;}
+  root.innerHTML='<button type="button" id="forage-spot" data-act="forage-collect" aria-label="野外采集物" style="'+junimoCornerStyle(f.corner)+'">'+pixIcon(def.icon,30)+"</button>";
+}
+function collectForage(){
+  var f=S.forage;if(!f||!f.itemId||f.page!==ui.page||f.date!==todayStr()||forageCollectedToday())return;
+  var def=forageDefOf(f.itemId);if(!def)return;
+  var key=seasonKeyOf(f.date);
+  mutate(function(){
+    if(S.forage.found.indexOf(S.forage.date)<0)S.forage.found.push(S.forage.date);
+    S.forage.uAt=Date.now();
+    if(!S.forageDex||typeof S.forageDex!=="object"||Array.isArray(S.forageDex))S.forageDex={};
+    if(!Array.isArray(S.forageDex[key]))S.forageDex[key]=[];
+    var isNew=S.forageDex[key].indexOf(def.id)<0;
+    if(isNew)S.forageDex[key].push(def.id);
+    var n=S.forageDex[key].length;
+    if(isNew)return [{icon:def.icon,title:"采集到了："+def.name,sub:"已收进采集图鉴 · "+seasonLabelOf(key)+" "+n+" / 6",small:true}];
+    return [{icon:def.icon,title:"采集到了："+def.name,sub:"图鉴里已有这一件，今天这件作纪念",small:true}];
+  });
+  renderForageLayer();
+}
+/* 集齐发奖：挂 render() 统一状态检查点，幂等键 forage:<季键>，账本层合并也按 idem 去重，不双发 */
+function checkForageGrants(){
+  var banners=[];var today=todayStr();
+  var keys={};keys[seasonKeyOf(today)]=1;
+  if(S.forageDex&&typeof S.forageDex==="object"&&!Array.isArray(S.forageDex))Object.keys(S.forageDex).forEach(function(k){keys[k]=1;});
+  Object.keys(keys).forEach(function(k){
+    if(forageDexList(k).length>=6&&!ledgerHasIdem("forage:"+k)){
+      addLedger("points",20,"季节采集图鉴集齐："+seasonLabelOf(k),today,"forage:"+k);
+      banners.push({icon:"fgBadge",title:"采集图鉴集齐 · "+seasonLabelOf(k),sub:"+20 积分已到账",small:false});
+    }
+  });
+  if(banners.length)save();
+  return banners;
+}
+function foragePanelHtml(){
+  var curKey=seasonKeyOf(todayStr());
+  var curYear=curKey.split("-")[0];
+  var shelves=FORAGE_SEASONS.map(function(season){
+    var key=curYear+"-"+season;
+    var dex=forageDexList(key);
+    var items=forageItemsOfSeason(season);
+    var complete=dex.length>=items.length;
+    var cells=items.map(function(it){
+      var got=dex.indexOf(it.id)>=0;
+      if(got)return '<div class="paper-panel" style="padding:10px;text-align:center;min-width:0"><div style="display:flex;justify-content:center">'+pixIcon(it.icon,36)+'</div><div class="small" style="font-weight:600;margin-top:4px">'+esc(it.name)+'</div><div class="xs dim" style="margin-top:2px">已采集</div></div>';
+      return '<div class="paper-panel" style="padding:10px;text-align:center;min-width:0"><div style="display:flex;justify-content:center;filter:grayscale(1) brightness(.45);opacity:.55">'+pixIcon(it.icon,36)+'</div><div class="small" style="font-weight:600;margin-top:4px">？？？</div><div class="xs dim" style="margin-top:2px">未采集 · '+SEASON_ZH[season]+'季</div></div>';
+    }).join("");
+    var head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b class="small">'+seasonLabelOf(key)+'</b><span class="xs dim">已采集 '+dex.length+" / "+items.length+"</span>"
+      +(key===curKey?'<span class="xs">当季</span>':"")
+      +(complete?'<span style="display:inline-flex;align-items:center;gap:5px">'+pixIcon("fgBadge",17)+'<span class="small">已集齐</span></span>':"")
+      +"</div>";
+    return '<div style="margin-top:12px">'+head+'<div class="grid-cards3">'+cells+"</div></div>";
+  }).join("");
+  var inner='<p class="small dim" style="margin:0 0 4px">每天有一件当季采集物藏在某个主页面角落里，点到收进图鉴；当天没点到，第二天作废重抽。往季只能回看，不能补采。当季集齐 6 件 +20 分。</p>'+shelves;
+  return panel("采集图鉴","basket",inner);
+}
+/* 合并规则（mergeStates 调用）：收藏 forageDex 按季并集（只留合法且季节相符的 id，不丢任一台的收藏）；
+   当日藏点 forage：date 不同取较新 date 整份；同 date 优先已采集（found 含当日）那份，其次 uAt 大者；found 日期取并集排序 */
+function mergeForageStates(L,R){
+  var dex={};
+  [L.forageDex,R.forageDex].forEach(function(o){
+    if(!o||typeof o!=="object"||Array.isArray(o))return;
+    Object.keys(o).forEach(function(k){
+      if(!Array.isArray(o[k]))return;
+      if(!dex[k])dex[k]=[];
+      o[k].forEach(function(id){var d=forageDefOf(id);if(d&&d.season===k.split("-")[1]&&dex[k].indexOf(id)<0)dex[k].push(id);});
+    });
+  });
+  var lf=(L.forage&&typeof L.forage==="object"&&!Array.isArray(L.forage))?L.forage:null;
+  var rf=(R.forage&&typeof R.forage==="object"&&!Array.isArray(R.forage))?R.forage:null;
+  var forage;
+  if(!lf&&!rf)forage={date:"",itemId:null,page:null,corner:null,found:[],uAt:0};
+  else if(!lf)forage=rf;
+  else if(!rf)forage=lf;
+  else{
+    function foundOnF(o){return Array.isArray(o.found)&&o.found.indexOf(o.date)>=0;}
+    var pickF=lf;
+    if(String(rf.date||"")>String(lf.date||""))pickF=rf;
+    else if(rf.date===lf.date){
+      if(foundOnF(rf)&&!foundOnF(lf))pickF=rf;
+      else if(foundOnF(rf)===foundOnF(lf)&&(rf.uAt||0)>(lf.uAt||0))pickF=rf;
+    }
+    var fseen={},foundM=[];
+    [lf.found,rf.found].forEach(function(arr){(Array.isArray(arr)?arr:[]).forEach(function(d){if(typeof d==="string"&&!fseen[d]){fseen[d]=1;foundM.push(d);}});});
+    foundM.sort();
+    forage={date:pickF.date||"",itemId:pickF.itemId||null,page:pickF.page||null,corner:pickF.corner||null,found:foundM,uAt:Math.max(lf.uAt||0,rf.uAt||0)};
+  }
+  return {forage:forage,forageDex:dex};
+}
+
 /* ---------- 12. 节日节气：今日页与日历 ---------- */
 function festivalBannerHtml(date){
   var f=festivalOf(date);if(!f)return "";
@@ -5765,7 +6033,7 @@ function rewardConfirmModal(r){
 /* ============ 成就图鉴 ============ */
 function achievementsPage(){
   var unlockedN=ACHIEVEMENTS.filter(function(a){return S.unlocked[a.key];}).length;
-  return '<div class="stack">'+bundlePanelHtml()+museumPanelHtml()+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
+  return '<div class="stack">'+bundlePanelHtml()+foragePanelHtml()+museumPanelHtml()+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
     '<div class="grid-cards3">'+ACHIEVEMENTS.map(function(a){
       var un=!!S.unlocked[a.key];
       return '<article class="paper-panel" style="padding:12px;text-align:center'+(un?"":";filter:grayscale(.9);opacity:.6")+'"><div style="display:flex;justify-content:center">'+pixIcon(un?a.icon:"lock",38)+'</div><h3 class="font-pixel" style="margin:4px 0 0">'+esc(a.name)+'</h3><p class="xs" style="margin:4px 0 0">'+esc(a.desc)+'</p><p class="font-num" style="font-size:10px;margin:4px 0 0">+'+a.points+" 分</p>"
@@ -6151,6 +6419,7 @@ function render(){
   if(ensureCycleSupply())save();
   if(junimoEnsureToday())save();
   if(noteEnsureToday())save();
+  if(forageEnsureToday())save();
   if(!document.body.classList.contains("locked")){
     var seasonRewardBanners=checkSeasonRewards();
     if(seasonRewardBanners.length){save();pushBanners(seasonRewardBanners);}
@@ -6158,13 +6427,15 @@ function render(){
     if(skillBanners.length)pushBanners(skillBanners);
     var museumBanners=checkMuseumGrants();
     if(museumBanners.length)pushBanners(museumBanners);
+    var forageBanners=checkForageGrants();
+    if(forageBanners.length)pushBanners(forageBanners);
     checkMail();
     var questBanners=checkQuests();
     if(questBanners.length)pushBanners(questBanners);
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
-  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();renderNoteLayer();
+  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();renderNoteLayer();renderForageLayer();
   if(keepScroll)window.scrollTo(0,y);
   restoreEditState(cap);
   lastRenderPage=ui.page;
@@ -6242,6 +6513,7 @@ document.addEventListener("click",function(e){
     case "quest-accept":questAccept(el.dataset.key);break;
     case "quest-abandon":questAbandon(el.dataset.key);break;
     case "note-open":openSecretNote();break;
+    case "forage-collect":collectForage();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
     /* 待办 */
