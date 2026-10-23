@@ -916,6 +916,169 @@ function seedCycles(){
   return [{id:2001,name:"换四件套",category:"全屋清洁",type:"weeks",n:2,dow:5,day:1,month:1,
     lastDone:null,nextDue:shiftDate(today,delta),remindDays:1,active:true,history:[],lastRewardDue:null}];
 }
+/* ---------- 公告板委托（今日页委托板） ---------- */
+/* 每周一（或本周首次打开）按周种子从七类模板抽 3 张：对每个模板算 newsHash("quest|"+周一+"|"+模板键)
+   升序取前 3，难度档由 newsHash("quest-tier|"+周一+"|"+模板键)%3 定——无随机数，同周同设备/跨设备一致
+   （与旅行商人 merchantStock 的周种子风格一致）。报酬定死：简单 25G / 中等 35G / 难 45G。
+   进度全部按本周一至今日的真实记录派生（接取前已完成的也算），不做事件累积；完成走 addLedger 幂等键
+   quest:<周键>:<模板键> 发金币，多设备合并不双发。状态 S.quests={week,pool,active,done}。 */
+var QUEST_TIER_REWARD={easy:25,mid:35,hard:45};
+var QUEST_TIER_ZH={easy:"简单",mid:"中等",hard:"难"};
+var QUEST_TIER_ORDER=["easy","mid","hard"];
+var QUEST_TPLS=[
+ {key:"todo",icon:"checkBadge",tiers:{easy:3,mid:5,hard:8},text:function(n){return "完成待办 "+n+" 件";}},
+ {key:"workout",icon:"dumbbell",tiers:{easy:2,mid:3,hard:4},text:function(n){return "运动 "+n+" 次";}},
+ {key:"fin",icon:"wallet",tiers:{easy:2,mid:3,hard:5},text:function(n){return "记账 "+n+" 天";}},
+ {key:"work",icon:"briefcase",tiers:{easy:2,mid:4,hard:6},text:function(n){return "办结工作 "+n+" 件";}},
+ {key:"anchor",icon:"pin",tiers:{easy:1,mid:2,hard:3},text:function(n){return "锚点全勤 "+n+" 天";}},
+ {key:"review",icon:"diary",tiers:{easy:2,mid:3,hard:5},text:function(n){return "复盘 "+n+" 天";}},
+ {key:"habit",icon:"sprout",tiers:{easy:4,mid:7,hard:12},text:function(n){return "习惯打卡 "+n+" 次";}}
+];
+function questDefOf(tpl){for(var i=0;i<QUEST_TPLS.length;i++)if(QUEST_TPLS[i].key===tpl)return QUEST_TPLS[i];return null;}
+function questLabelOf(entry){var d=questDefOf(entry.tpl);return d?d.text(entry.n):"";}
+function questPoolForWeek(ws){
+  var sorted=QUEST_TPLS.slice().sort(function(a,b){
+    var ha=newsHash("quest|"+ws+"|"+a.key),hb=newsHash("quest|"+ws+"|"+b.key);
+    return ha<hb?-1:(ha>hb?1:(a.key<b.key?-1:1));
+  }).slice(0,3);
+  return sorted.map(function(d){
+    var tier=QUEST_TIER_ORDER[Math.abs(newsHash("quest-tier|"+ws+"|"+d.key))%3];
+    return{tpl:d.key,n:d.tiers[tier],tier:tier};
+  });
+}
+/* 状态清洗：pool 只留合法模板（去重、至多 3 张），done 优先于 active，active 至多 2 张且只含池内未完成项 */
+function questsClean(q){
+  if(!q||typeof q!=="object"||Array.isArray(q))return{week:"",pool:[],active:[],done:[]};
+  var week=(typeof q.week==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(q.week))?q.week:"";
+  var pool=[],seen={};
+  (Array.isArray(q.pool)?q.pool:[]).forEach(function(e){
+    if(!e||seen[e.tpl])return;var def=questDefOf(e.tpl);if(!def)return;
+    var tier=QUEST_TIER_REWARD[e.tier]?e.tier:"easy";
+    var n=(typeof e.n==="number"&&isFinite(e.n)&&e.n>0)?Math.floor(e.n):def.tiers[tier];
+    seen[e.tpl]=1;pool.push({tpl:e.tpl,n:n,tier:tier});
+  });
+  pool=pool.slice(0,3);
+  function keyList(arr){var out=[];(Array.isArray(arr)?arr:[]).forEach(function(k){if(typeof k==="string"&&seen[k]&&out.indexOf(k)<0)out.push(k);});return out;}
+  var done=keyList(q.done);
+  var active=keyList(q.active).filter(function(k){return done.indexOf(k)<0;}).slice(0,2);
+  return{week:week,pool:pool,active:active,done:done};
+}
+/* 合并规则（mergeStates 调用）：周键不同取较新周键的一整份；同周时 pool 以种子正准池为准
+   （同周同种子应恒等，不一致时用 questPoolForWeek 生成的正准池），active/done 取并集（done 优先、active 至多 2 张按池序） */
+function mergeQuests(Lq,Rq){
+  var a=questsClean(Lq),b=questsClean(Rq);
+  if(a.week!==b.week)return (a.week>b.week)?a:b;
+  if(!a.week)return a;
+  var gen=questPoolForWeek(a.week);
+  function samePool(p){return p.length===gen.length&&p.every(function(e,i){return e.tpl===gen[i].tpl&&e.n===gen[i].n&&e.tier===gen[i].tier;});}
+  var pool=samePool(a.pool)?a.pool:(samePool(b.pool)?b.pool:gen);
+  var inPool={};pool.forEach(function(e){inPool[e.tpl]=1;});
+  var done=[];[a.done,b.done].forEach(function(arr){arr.forEach(function(k){if(inPool[k]&&done.indexOf(k)<0)done.push(k);});});
+  var active=[];
+  pool.forEach(function(e){
+    if(done.indexOf(e.tpl)>=0)return;
+    if(a.active.indexOf(e.tpl)>=0||b.active.indexOf(e.tpl)>=0)active.push(e.tpl);
+  });
+  active=active.slice(0,2);
+  return{week:a.week,pool:pool,active:active,done:done};
+}
+function questAnchorsForDateIn(st,date){
+  var dow=dowOf(date);
+  return (Array.isArray(st.anchors)?st.anchors:[]).filter(function(a){return a&&a.enabled&&(a.days==null||a.days.indexOf(dow)>=0);});
+}
+function questAnchorStatusIn(st,id,date){
+  var s=null;(Array.isArray(st.anchorLogs)?st.anchorLogs:[]).forEach(function(l){if(l&&l.anchorId===id&&l.date===date)s=l.status;});return s;
+}
+/* 进度派生（纯函数，st 为任意状态包）：统计 [本周一 ws, 今日 today] 内的真实记录。
+   待办：todos 中 done 且 date 在区间内（与收集包/技能的待办口径一致）；运动：workouts 条数；
+   记账：financeTx 按 date 去重的天数；办结工作：workItems 中 done 且 doneDate 在区间内；
+   锚点全勤：逐日看当日适用锚点（启用且排班）总数 >0 且 anchorLogs 全部 done 的天数（anchorPerfectDays 同口径）；
+   复盘：reviews 按 date 去重的天数；习惯打卡：habitLogs 条数。 */
+function questProgressIn(st,tpl,ws,today){
+  function inW(d){return !!d&&typeof d==="string"&&d>=ws&&d<=today;}
+  switch(tpl){
+    case "todo":return (st.todos||[]).filter(function(x){return x&&x.done&&inW(x.date);}).length;
+    case "workout":return (st.workouts||[]).filter(function(x){return x&&inW(x.date);}).length;
+    case "fin":{var s1={};(st.financeTx||[]).forEach(function(x){if(x&&inW(x.date))s1[x.date]=1;});return Object.keys(s1).length;}
+    case "work":return (st.workItems||[]).filter(function(x){return x&&x.done&&inW(x.doneDate);}).length;
+    case "anchor":{
+      var cnt=0,d=ws,guard=0;
+      while(d<=today&&guard<8){
+        var list=questAnchorsForDateIn(st,d);
+        if(list.length>0){
+          var all=list.every(function(a){return questAnchorStatusIn(st,a.id,d)==="done";});
+          if(all)cnt++;
+        }
+        d=shiftDate(d,1);guard++;
+      }
+      return cnt;}
+    case "review":{var s2={};(st.reviews||[]).forEach(function(x){if(x&&inW(x.date))s2[x.date]=1;});return Object.keys(s2).length;}
+    case "habit":return (st.habitLogs||[]).filter(function(x){return x&&inW(x.date);}).length;
+    default:return 0;
+  }
+}
+function questProgress(tpl){var today=todayStr();return questProgressIn(S,tpl,weekStartOf(today),today);}
+/* 统一检查点（render() 调用，与 checkMail 同族）：周键过期则按种子整周重生成（上周未完成直接撤下、无惩罚、不迁移）；
+   进行中委托进度达标自动完成：移入 done、释放名额、按幂等键发报酬（账本已有同键时只补 done 标记、不重复发、不重复弹横幅） */
+function checkQuests(){
+  var banners=[];var today=todayStr();var wk=weekStartOf(today);var changed=false;
+  var q=questsClean(S.quests);
+  if(q.week!==wk){q={week:wk,pool:questPoolForWeek(wk),active:[],done:[]};changed=true;}
+  q.active.slice().forEach(function(tpl){
+    var entry=null;q.pool.forEach(function(e){if(e.tpl===tpl)entry=e;});
+    if(!entry)return;
+    if(questProgressIn(S,tpl,wk,today)>=entry.n){
+      q.active=q.active.filter(function(k){return k!==tpl;});
+      if(q.done.indexOf(tpl)<0)q.done.push(tpl);
+      var rew=QUEST_TIER_REWARD[entry.tier]||25;
+      var idem="quest:"+wk+":"+tpl;
+      var already=S.ledger.some(function(l){return l.idem===idem;});
+      addLedger("gold",rew,"委托完成："+questLabelOf(entry),today,idem);
+      if(!already)banners.push({icon:"board",title:"委托完成："+questLabelOf(entry),sub:"+"+rew+" G 已到账",small:true});
+      changed=true;
+    }
+  });
+  S.quests=q;
+  if(changed)save();
+  return banners;
+}
+function questAccept(tpl){
+  var q=questsClean(S.quests);
+  if(q.week!==weekStartOf(todayStr()))return;
+  if(q.done.indexOf(tpl)>=0||q.active.indexOf(tpl)>=0)return;
+  if(!q.pool.some(function(e){return e.tpl===tpl;}))return;
+  if(q.active.length>=2){pushBanners([{icon:"board",title:"进行中的委托已有 2 张",sub:"先完成或放弃一张，再接新的。",small:true}]);return;}
+  mutate(function(){var qq=questsClean(S.quests);qq.active.push(tpl);S.quests=qq;return [];});
+}
+/* 放弃口径：退回池中（仍在本周板上，可再次接取），无惩罚 */
+function questAbandon(tpl){
+  mutate(function(){var qq=questsClean(S.quests);qq.active=qq.active.filter(function(k){return k!==tpl;});S.quests=qq;return [];});
+}
+function questBoardHtml(){
+  var today=todayStr();var wk=weekStartOf(today);var we=shiftDate(wk,6);
+  var q=questsClean(S.quests);
+  if(q.week!==wk)q={week:wk,pool:questPoolForWeek(wk),active:[],done:[]};
+  var rows=q.pool.map(function(e){
+    var def=questDefOf(e.tpl);var rew=QUEST_TIER_REWARD[e.tier]||25;
+    var isDone=q.done.indexOf(e.tpl)>=0,isActive=q.active.indexOf(e.tpl)>=0;
+    var prog=Math.min(questProgressIn(S,e.tpl,wk,today),e.n);
+    var pct=e.n>0?Math.round(prog/e.n*100):0;
+    var status=isDone?tag("已完成","pix-tag-green"):(isActive?tag("进行中","pix-tag-blue"):tag("未接取","pix-tag-gray"));
+    var action=isDone?'<span class="small dim">报酬 '+rew+" G 已到账</span>"
+      :(isActive?'<button type="button" class="pix-btn pix-btn-ghost pix-btn-sm" data-act="quest-abandon" data-key="'+e.tpl+'" aria-label="放弃委托：'+esc(questLabelOf(e))+'">放弃</button>'
+                :'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" data-act="quest-accept" data-key="'+e.tpl+'" aria-label="接取委托：'+esc(questLabelOf(e))+'">接取</button>');
+    return '<article class="paper-panel" style="padding:10px 12px;margin-bottom:8px;max-width:100%">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+pixIcon(def?def.icon:"board",22)
+      +'<b class="small" style="flex:1;min-width:110px">'+esc(questLabelOf(e))+"</b>"+status+"</div>"
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">'
+      +'<span class="xs dim">'+QUEST_TIER_ZH[e.tier]+" · 报酬 "+rew+" G</span>"
+      +'<span class="font-num xs">进度 '+prog+" / "+e.n+"</span>"
+      +'<span style="flex:1;min-width:70px;height:8px;background:#e8dcc0;border:2px solid #4a2c14"><span style="display:block;width:'+pct+'%;height:100%;background:#5da33c"></span></span>'
+      +action+"</div></article>";
+  }).join("");
+  var head='<p class="small dim" style="margin:0 0 10px">本周 '+wk+" 至 "+we+'，共 3 张，每周一刷新。同时进行中最多 2 张；进度按本周一到今天的记录算，接取前做完的也算。</p>';
+  return panel("委托板","board",head+rows);
+}
 function defaultState(){
   return {
     profile:{name:"农场主",companion:"sebastian",avatarEmoji:"farmer",bio:"",birthdaySeason:"秋",birthdayDay:24,loves:[],hates:[],petName:"汤圆",petEmoji:"cat",activeSkin:"default",signStyle:"default",fxOn:{},wornTitle:null,accWorn:{haley:null,linus:null,sebastian:null}},
@@ -926,7 +1089,7 @@ function defaultState(){
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
     unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},
-    mail:[],catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
+    mail:[],quests:{week:"",pool:[],active:[],done:[]},catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -1021,6 +1184,7 @@ function normalizeState(){
     m.read=!!m.read;
     return true;
   });
+  S.quests=questsClean(S.quests);
   if(typeof S._profileUAt!=="number")S._profileUAt=0;
 }
 var S;
@@ -1237,6 +1401,8 @@ function mergeStates(L,R){
   })();
   /* 邮箱来信：按 key 并集（两边独有信都保留），同一 key 的 read 取或，正文等字段以先到为准（同 key 内容恒等） */
   out.mail=mergeMailLists(L.mail,R.mail);
+  /* 公告板委托：周键不同取较新周键整份；同周 active/done 取并集、pool 以种子正准池为准（详见 mergeQuests） */
+  out.quests=mergeQuests(L.quests,R.quests);
   /* 朋友互动事件：记录本体按 uAt 取胜者会丢掉另一台的事件，这里按 (date+type+bday) 复合键并集去重，两边独有都保留；好感全部派生、不存计数器 */
   out.friends.forEach(function(fr){
     var lf=null,rf=null;
@@ -4002,6 +4168,7 @@ function lifePage(){
     +'<button type="button" class="pix-btn" data-act="go" data-page="workToday"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("board",16)+' 今日工作</span></button>'
     +'<a href="#evening-news" class="pix-btn pix-btn-blue"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("news",16)+" 鹈鹕报道</span></a></div></section>";
   h+=mailEntryHtml();
+  h+=questBoardHtml();
   var bdayList=S.friends.map(function(f){return{f:f,nb:nextBirthdayOf(f,today)};})
     .filter(function(x){return x.nb.daysLeft!=null&&x.nb.daysLeft<=3;})
     .sort(function(a,b){return a.nb.daysLeft-b.nb.daysLeft;});
@@ -5992,6 +6159,8 @@ function render(){
     var museumBanners=checkMuseumGrants();
     if(museumBanners.length)pushBanners(museumBanners);
     checkMail();
+    var questBanners=checkQuests();
+    if(questBanners.length)pushBanners(questBanners);
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
@@ -6070,6 +6239,8 @@ document.addEventListener("click",function(e){
     case "mail-read-all":{
       if(markAllMailRead()){save();render();}
       openMailModal();break;}
+    case "quest-accept":questAccept(el.dataset.key);break;
+    case "quest-abandon":questAbandon(el.dataset.key);break;
     case "note-open":openSecretNote();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
