@@ -753,7 +753,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},stardrops:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -778,6 +778,7 @@ function normalizeState(){
   if(!S.unlocked||typeof S.unlocked!=="object"||Array.isArray(S.unlocked))S.unlocked={};
   if(!Array.isArray(S.newsDays))S.newsDays=[];
   if(!S.stardrops||typeof S.stardrops!=="object"||Array.isArray(S.stardrops))S.stardrops={};
+  if(!S.skillGrants||typeof S.skillGrants!=="object"||Array.isArray(S.skillGrants))S.skillGrants={};
   if(!S.notes||typeof S.notes!=="object"||Array.isArray(S.notes))S.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};
   if(!Array.isArray(S.notes.found))S.notes.found=[];
   if(!Array.isArray(S.notes.cycle))S.notes.cycle=[];
@@ -1067,6 +1068,12 @@ function mergeStates(L,R){
       [ln.cycle,rn.cycle].forEach(function(arr){(arr||[]).forEach(function(id){if(id&&!cseen[id]){cseen[id]=1;merged.cycle.push(id);}});});
       out.notes=merged;
     }
+  })();
+  /* 技能升级发奖进度：每维取已发奖到的较高等级，防止两台设备合并后重复发奖 */
+  (function(){
+    var sg={};
+    [L.skillGrants,R.skillGrants].forEach(function(o){if(o&&typeof o==="object"&&!Array.isArray(o))Object.keys(o).forEach(function(k){var v=Number(o[k])||0;if(!sg[k]||v>sg[k])sg[k]=v;});});
+    out.skillGrants=sg;
   })();
   /* 钱包从账本推导：期初基数 + 合并后账本增量之和 */
   out._baseGold=typeof L._baseGold==="number"?L._baseGold:(typeof R._baseGold==="number"?R._baseGold:0);
@@ -2599,6 +2606,117 @@ function checkSeasonRewards(){
     }
   });
   return banners;
+}
+
+/* ---------- 10.5 技能等级 ---------- */
+/* 五维技能全部由真实记录派生（不做事件累积计数器）：基线日之前的记录一律计 0；
+   每维先按日汇总原始 XP、截断到每日封顶，再跨日汇总为总 XP。
+   运动 12 / 书房 8 / 工作办结 10 / 记账 2 / 待办完成 6 / 习惯打卡 4 / 锚点全勤日 10。 */
+var SKILL_BASE="2026-10-23";
+/* 累计 XP 达到该级下限即为该级：下标 = 等级-1（L1 下限 0，L10 下限 1850） */
+var SKILL_FLOORS=[0,50,120,220,350,520,740,1020,1380,1850];
+var SKILL_DEFS=[
+  {key:"body",name:"体魄",icon:"dumbbell",cap:60},
+  {key:"mind",name:"学问",icon:"book",cap:60},
+  {key:"work",name:"办事",icon:"briefcase",cap:60},
+  {key:"home",name:"持家",icon:"piggy",cap:20},
+  {key:"diligence",name:"勤勉",icon:"checkBadge",cap:60}
+];
+/* 锚点全勤日：当日适用锚点（启用且当日排班）总数 > 0，且全部在 anchorLogs 中为 done */
+function anchorPerfectDays(){
+  var days={};
+  var d=SKILL_BASE,today=todayStr();
+  while(d<=today){
+    var list=anchorsForDate(d);
+    if(list.length>0&&list.every(function(a){return anchorStatus(a.id,d)==="done";}))days[d]=1;
+    d=shiftDate(d,1);
+  }
+  return days;
+}
+function skillDailyRaw(key){
+  var raw={};
+  function add(date,xp){if(date&&date>=SKILL_BASE)raw[date]=(raw[date]||0)+xp;}
+  if(key==="body")S.workouts.forEach(function(w){add(w.date,12);});
+  else if(key==="mind")S.studyLogs.forEach(function(l){add(l.date,8);});
+  else if(key==="work")S.workItems.forEach(function(w){if(w.done)add(w.doneDate,10);});
+  else if(key==="home")S.financeTx.forEach(function(t){add(t.date,2);});
+  else if(key==="diligence"){
+    S.todos.forEach(function(t){if(t.done)add(t.date,6);});
+    S.habitLogs.forEach(function(l){add(l.date,4);});
+    var perfect=anchorPerfectDays();
+    Object.keys(perfect).forEach(function(d){add(d,10);});
+  }
+  return raw;
+}
+function skillXp(key){
+  var def=null;SKILL_DEFS.forEach(function(x){if(x.key===key)def=x;});
+  var raw=skillDailyRaw(key);var total=0;
+  Object.keys(raw).forEach(function(d){total+=Math.min(raw[d],def.cap);});
+  return total;
+}
+function skillInfo(key){
+  var xp=skillXp(key);var level=1;
+  for(var lv=10;lv>=1;lv--){if(xp>=SKILL_FLOORS[lv-1]){level=lv;break;}}
+  return{xp:xp,level:level,floor:SKILL_FLOORS[level-1],next:level<10?SKILL_FLOORS[level]:null};
+}
+function skillTotalLevel(){
+  var sum=0;SKILL_DEFS.forEach(function(def){sum+=skillInfo(def.key).level;});
+  return sum;
+}
+/* 技能升级道贺词：normal 为各小人本人口吻，gentle 为温和池；低落心情日只许用 gentle */
+var SKILL_CONGRATS_LINES={
+ sebastian:{normal:["技能又涨了一截。……别看我，我就是随口一说。能坚持到这儿，算你厉害。","Lv.又往上跳了。行吧，这种事，值得我从地下室里探个头出来看一眼。"],
+            gentle:["慢慢来也走到了这儿。……嗯，挺好。不用赶，今天这样就够了。","升级了。别想太多，先歇会儿。这份本事，不会因为你歇一天就跑掉。"]},
+ haley:{normal:["技能升级！快让我看看——嗯，这个等级的光泽，跟你今天的状态一样亮眼。","又升了一级。哼，最近的你，整个人都在发光。我可没在夸你。"],
+        gentle:["今天不挑你刺。能走到这一步，我都看在眼里了，慢慢来就好。","升级啦。别逞强，累了就歇着——好看的等级，要配好看的人慢慢拿。"]},
+ linus:{normal:["技能长了一截，像春天的苗。日子没白过，路也没白走。","一级一级往上走。这条山路，你走得很稳，老头子看得高兴。"],
+        gentle:["累了就回帐篷歇歇。山不会跑，你的本事，也不会少一分。","慢慢来。汤在锅里，路在脚下，升级这事，不急在这一天。"]}
+};
+function companionSkillCongrats(){
+  var pools=SKILL_CONGRATS_LINES[comp.char]||SKILL_CONGRATS_LINES.sebastian;
+  var pool=lowMoodDay()?pools.gentle:pools.normal.concat(pools.gentle);
+  companionSpeak(pool[Math.floor(Math.random()*pool.length)]||pool[0]);
+}
+/* 升级发奖：派生等级 > 已发奖等级时，逐级各发 +10 积分（幂等键 skill:<维>:<等级> 双保险）；
+   派生等级因删记录回落时不追回、不重复发。每个升级维度一条横幅，一次检测小人只道贺一次 */
+function checkSkillGrants(){
+  var today=todayStr();var banners=[];var anyUp=false;
+  SKILL_DEFS.forEach(function(def){
+    var info=skillInfo(def.key);
+    var granted=(typeof S.skillGrants[def.key]==="number")?S.skillGrants[def.key]:1;
+    if(info.level>granted){
+      for(var lv=granted+1;lv<=info.level;lv++){
+        addLedger("points",10,"技能提升："+def.name+" Lv."+lv,today,"skill:"+def.key+":"+lv);
+      }
+      S.skillGrants[def.key]=info.level;
+      banners.push({icon:def.icon,title:"技能提升 · "+def.name+" Lv."+info.level,sub:"+"+((info.level-granted)*10)+" 积分已到账",small:false});
+      anyUp=true;
+    }
+  });
+  if(anyUp){save();companionSkillCongrats();}
+  return banners;
+}
+/* 个人简介页技能面板：五维各一行，满级显示「满级」标签、不显示经验条 */
+function skillsPanelHtml(){
+  var rows=SKILL_DEFS.map(function(def,i){
+    var info=skillInfo(def.key);
+    var tail;
+    if(info.level>=10){
+      tail='<span class="pix-tag pix-tag-green">满级</span>';
+    }else{
+      var pct=Math.max(0,Math.min(100,Math.round((info.xp-info.floor)/(info.next-info.floor)*100)));
+      tail='<div style="flex:1;min-width:90px;height:10px;background:#e8dcc0;border:2px solid #4a2c14"><div style="width:'+pct+'%;height:100%;background:#5da33c"></div></div>'
+        +'<span class="xs dim font-num" style="white-space:nowrap">'+info.xp+" / "+info.next+" XP</span>";
+    }
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0'+(i<SKILL_DEFS.length-1?";border-bottom:1px dashed #d8c491":"")+'">'
+      +pixIcon(def.icon,20)
+      +'<span style="font-weight:600;white-space:nowrap">'+def.name+'</span>'
+      +'<span class="font-pixel" style="white-space:nowrap">Lv.'+info.level+"</span>"
+      +tail+"</div>";
+  }).join("");
+  return '<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 4px;display:flex;align-items:center;gap:8px">'+pixIcon("medal",18)+" 技能 · 总等级 "+skillTotalLevel()+" / 50</h3>"
+    +'<p class="small dim" style="margin:0 0 6px">技能等级由运动、书房记录、工作办结、记账、待办与习惯等真实记录派生，计数自 2026-10-23 起算；每升一级 +10 积分。</p>'
+    +rows+"</div>";
 }
 
 /* ---------- 11. 秘密纸条 ---------- */
@@ -4524,6 +4642,7 @@ function profilePage(){
     +'<div style="text-align:center"><div style="display:flex;justify-content:center">'+personSprite("sebastian",48)+'</div><div class="xs" style="font-weight:600;margin-top:4px">塞巴斯蒂安</div><div class="xs dim">冬10日生 · 住木匠店地下室<br>最爱生鱼片 / 南瓜汤 / 泪晶</div></div>'
     +'<div style="text-align:center"><div style="display:flex;justify-content:center">'+storedIcon(p.petEmoji,48,"cat")+'</div><div class="xs" style="font-weight:600;margin-top:4px">宠物 · '+esc(p.petName)+'</div><div class="xs dim">家里的大王</div></div>'
     +"</div></div></div></div></div>"
+    +skillsPanelHtml()
     +'<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 8px">云端账号</h3>'
     +(session
       ?'<p class="small" style="margin:0 0 8px">当前登录：'+esc(session.email||"")+'</p><div class="row wrap" style="gap:8px;align-items:center"><span class="pix-tag sync-badge" style="'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span><button type="button" class="pix-btn pix-btn-ghost" data-act="auth-logout" aria-label="退出登录">退出登录</button></div>'
@@ -4819,6 +4938,8 @@ function render(){
   if(!document.body.classList.contains("locked")){
     var seasonRewardBanners=checkSeasonRewards();
     if(seasonRewardBanners.length){save();pushBanners(seasonRewardBanners);}
+    var skillBanners=checkSkillGrants();
+    if(skillBanners.length)pushBanners(skillBanners);
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
