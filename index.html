@@ -676,9 +676,9 @@ function saveCatCare(deworm,vaccine){
 }
 
 /* ============ 温室（今日页·宠物角之后）：两株长期植物，纯展示 + 满格里程碑发分 ============
-   安睡藤（key=sleep）：计数 = 锚点模板中名称含「睡觉」或「入睡」的锚点（种子数据命中 id 1008「睡觉」23:30）
-   在 anchorLogs 中 status 为 done 的日期去重数，全历史；同日多条睡觉锚点 done 只算 1 天，skip/未处理不算。
-   一条都找不到时降级为锚点全勤天数：当日适用锚点（启用且排班）全部 done 的天数，全历史（口径同 questProgressIn 的 anchor 分支）。
+   安睡藤（key=sleep）：计数 = 农时模板中名称含「睡觉」或「入睡」的农时（种子数据命中 id 1008「睡觉」23:30）
+   在 anchorLogs 中 status 为 done 的日期去重数，全历史；同日多条睡觉农时 done 只算 1 天，skip/未处理不算。
+   一条都找不到时降级为农时全勤天数：当日适用农时（启用且排班）全部 done 的天数，全历史（口径同 questProgressIn 的 anchor 分支）。
    体态花（key=posture）：计数 = workouts 全历史条数（原始条数，不按天去重，与收集包/技能的运动口径一致）。
    两株计数全部派生、不存计数器、不新增状态。阶段阈值定死：计数 >=7 第 2 段、>=14 第 3 段、>=30 第 4 段、
    >=60 第 5 段、>=100 第 6 段（结果定格）；段名：种下/发芽/抽藤（体态花为抽枝）/长叶/开花/结果。
@@ -791,7 +791,7 @@ function greenhousePlantHtml(plant,count,sleepInfo){
   var info=greenhouseStageInfo(plant.kind,count);
   var fact;
   if(plant.key==="sleep"){
-    fact=(sleepInfo&&sleepInfo.fallback)?("锚点全勤 "+count+" 天 · "+info.label):("已在 23:30 前睡下 "+count+" 天 · "+info.label);
+    fact=(sleepInfo&&sleepInfo.fallback)?("农时全勤 "+count+" 天 · "+info.label):("已在 23:30 前睡下 "+count+" 天 · "+info.label);
   }else{
     fact="已记录运动 "+count+" 次 · "+info.label;
   }
@@ -807,8 +807,8 @@ function greenhousePlantHtml(plant,count,sleepInfo){
 function greenhousePanelHtml(){
   var sleepInfo=greenhouseSleepInfoIn(S);
   var counts={sleep:sleepInfo.count,posture:greenhousePostureCountIn(S)};
-  var inner='<p class="small dim" style="margin:0 0 10px">两株长期植物，按全历史记录长：安睡藤数睡觉锚点完成的天数，体态花数运动记录的次数。长到结果（100）时各 +30 积分。</p>'
-    +(sleepInfo.fallback?'<p class="small dim" style="margin:0 0 10px">未找到名称含「睡觉」或「入睡」的锚点，安睡藤暂按锚点全勤天数计。</p>':"")
+  var inner='<p class="small dim" style="margin:0 0 10px">两株长期植物，按全历史记录长：安睡藤数「睡觉」这条农时完成的天数，体态花数运动记录的次数。长到结果（100）时各 +30 积分。</p>'
+    +(sleepInfo.fallback?'<p class="small dim" style="margin:0 0 10px">未找到名称含「睡觉」或「入睡」的农时，安睡藤暂按农时全勤天数计。</p>':"")
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
     +GREENHOUSE_PLANTS.map(function(p){return greenhousePlantHtml(p,counts[p.key],sleepInfo);}).join("")
     +"</div>";
@@ -1099,7 +1099,7 @@ var QUEST_TPLS=[
  {key:"workout",icon:"dumbbell",tiers:{easy:2,mid:3,hard:4},text:function(n){return "运动 "+n+" 次";}},
  {key:"fin",icon:"wallet",tiers:{easy:2,mid:3,hard:5},text:function(n){return "记账 "+n+" 天";}},
  {key:"work",icon:"briefcase",tiers:{easy:2,mid:4,hard:6},text:function(n){return "办结工作 "+n+" 件";}},
- {key:"anchor",icon:"pin",tiers:{easy:1,mid:2,hard:3},text:function(n){return "锚点全勤 "+n+" 天";}},
+ {key:"anchor",icon:"pin",tiers:{easy:1,mid:2,hard:3},text:function(n){return "农时全勤 "+n+" 天";}},
  {key:"review",icon:"diary",tiers:{easy:2,mid:3,hard:5},text:function(n){return "复盘 "+n+" 天";}},
  {key:"habit",icon:"sprout",tiers:{easy:4,mid:7,hard:12},text:function(n){return "习惯打卡 "+n+" 次";}}
 ];
@@ -1161,7 +1161,7 @@ function questAnchorStatusIn(st,id,date){
 /* 进度派生（纯函数，st 为任意状态包）：统计 [本周一 ws, 今日 today] 内的真实记录。
    待办：todos 中 done 且 date 在区间内（与收集包/技能的待办口径一致）；运动：workouts 条数；
    记账：financeTx 按 date 去重的天数；办结工作：workItems 中 done 且 doneDate 在区间内；
-   锚点全勤：逐日看当日适用锚点（启用且排班）总数 >0 且 anchorLogs 全部 done 的天数（anchorPerfectDays 同口径）；
+   农时全勤：逐日看当日适用农时（启用且排班）总数 >0 且 anchorLogs 全部 done 的天数（anchorPerfectDays 同口径）；
    复盘：reviews 按 date 去重的天数；习惯打卡：habitLogs 条数。 */
 function questProgressIn(st,tpl,ws,today){
   function inW(d){return !!d&&typeof d==="string"&&d>=ws&&d<=today;}
@@ -1528,7 +1528,7 @@ function mergeStates(L,R){
     });
     out[key]=res;
   });
-  /* 预置锚点/周期事务在老版本里是随机 id，两台设备各一份：按内容签名去重，留 uAt 较新的一条 */
+  /* 预置农时/周期事务在老版本里是随机 id，两台设备各一份：按内容签名去重，留 uAt 较新的一条 */
   function dedupeBySig(key,sigOf){
     var seen={},res=[];
     out[key].slice().sort(function(a,b){return recUAt(b)-recUAt(a);}).forEach(function(r){
@@ -1954,7 +1954,7 @@ function checkAchievements(){
 /* 今日范围（单一口径）：今日待办 + 已接取（stage=active）且 dueDate<=今日 的工作事项。
    work 是其中未完成的列表（全清判定与今日页待办列表用）；total/done 按 workAll（不论完成与否）计，办完工作事项进度也要涨。
    顶栏进度、今日进度条、全清判定与全清奖励全部共用这一个函数。
-   全清不含习惯、不含锚点：习惯是长期浇灌，锚点在今日页单独显示进度，都不进全清分母。 */
+   全清不含习惯、不含农时：习惯是长期浇灌，农时在今日页单独显示进度，都不进全清分母。 */
 function todayScope(){
   var today=todayStr();
   var todos=S.todos.filter(function(t){return t.date===today;});
@@ -2532,7 +2532,7 @@ function toggleHabitToday(id){
   }
   return banners;
 }
-/* ============ 固定锚点（锚点模板 + 按日完成记录，不单独发金币） ============ */
+/* ============ 固定农时（农时模板 + 按日完成记录，不单独发金币） ============ */
 function anchorsForDate(date){
   var dow=dowOf(date);
   return S.anchors.filter(function(a){return a.enabled&&(a.days==null||a.days.indexOf(dow)>=0);});
@@ -2760,7 +2760,7 @@ function lunarLeapMonthOf(info){return info&0xf;}
 function lunarLeapDaysOf(info){if(!lunarLeapMonthOf(info))return 0;return (info&0x10000)?30:29;}
 function lunarMonthDaysOf(info,m){return (info&(0x10000>>m))?30:29;}
 function lunarYearDaysOf(info){var d=348+lunarLeapDaysOf(info);for(var m=1;m<=12;m++)if(info&(0x10000>>m))d++;return d;}
-/* 农历 (lunarYear, lm, ld) → 公历 "YYYY-MM-DD"：优先用内嵌信息表从锚点（农历 2025 年正月初一 = 公历 2025-01-29）
+/* 农历 (lunarYear, lm, ld) → 公历 "YYYY-MM-DD"：优先用内嵌信息表从农时（农历 2025 年正月初一 = 公历 2025-01-29）
    按整年/整月天数累加；目标日超过该月天数返回 null；年份不在表中时回退到 Intl 逐日扫描。 */
 function lunarToSolar(lunarYear,lm,ld){
   var ck=lunarYear+"-"+lm+"-"+ld;
@@ -3135,7 +3135,7 @@ function buildNewsSnapshot(date,mode){
     var todos=S.todos.filter(function(x){return x.date===date&&!x.done;});
     if(todos.length)items.push("今日待办 "+todos.length+" 件："+todos.map(function(x){return x.text;}).join("、"));
     var anch=anchorsForDate(date);
-    if(anch.length)items.push("今日锚点："+anch.map(function(a){return a.text;}).join("、"));
+    if(anch.length)items.push("今日农时："+anch.map(function(a){return a.text;}).join("、"));
     var work=S.workItems.filter(function(w){return !w.done&&(w.dueDate===date||w.planDate===date);});
     if(work.length)items.push("今日工作事项："+work.map(function(w){return w.title+((w.planDate===date&&w.dueDate!==date)?"（拟今日办理）":(w.dueDate===date?"（今日到期）":""));}).join("、"));
     if(date===todayStr()){
@@ -3774,7 +3774,7 @@ function museumPanelHtml(){
 /* ---------- 10.5 技能等级 ---------- */
 /* 五维技能全部由真实记录派生（不做事件累积计数器）：基线日之前的记录一律计 0；
    每维先按日汇总原始 XP、截断到每日封顶，再跨日汇总为总 XP。
-   运动 12 / 书房 8 / 工作办结 10 / 记账 2 / 待办完成 6 / 习惯打卡 4 / 锚点全勤日 10。 */
+   运动 12 / 书房 8 / 工作办结 10 / 记账 2 / 待办完成 6 / 习惯打卡 4 / 农时全勤日 10。 */
 var SKILL_BASE="2026-10-23";
 /* 累计 XP 达到该级下限即为该级：下标 = 等级-1（L1 下限 0，L10 下限 1850） */
 var SKILL_FLOORS=[0,50,120,220,350,520,740,1020,1380,1850];
@@ -3785,7 +3785,7 @@ var SKILL_DEFS=[
   {key:"home",name:"持家",icon:"piggy",cap:20},
   {key:"diligence",name:"勤勉",icon:"checkBadge",cap:60}
 ];
-/* 锚点全勤日：当日适用锚点（启用且当日排班）总数 > 0，且全部在 anchorLogs 中为 done */
+/* 农时全勤日：当日适用农时（启用且当日排班）总数 > 0，且全部在 anchorLogs 中为 done */
 function anchorPerfectDays(){
   var days={};
   var d=SKILL_BASE,today=todayStr();
@@ -4704,7 +4704,7 @@ function renderHud(){
   var my=S.todos.filter(function(t){return t.date===today;});
   var done=my.filter(function(t){return t.done;}).length;
   var hearts=Math.min(5,done);
-  /* 今日进度与全清共用 todayScope 口径：锚点不进分母（锚点进度在今日页单独显示） */
+  /* 今日进度与全清共用 todayScope 口径：农时不进分母（农时进度在今日页单独显示） */
   var scope=todayScope();
   var progressTotal=scope.total;
   var progress=progressTotal>0?Math.round(scope.done/progressTotal*100):0;
@@ -4873,7 +4873,7 @@ function tvApplyWeatherText(text){
   var el=document.getElementById("tv-screen-text");
   if(el)el.textContent=text;
 }
-/* 今日宜忌：只从当天事实推导——今日锚点（anchorsForDate）、todayScope 的到期/逾期工作件数、今日待办未完成件数 */
+/* 今日宜忌：只从当天事实推导——今日农时（anchorsForDate）、todayScope 的到期/逾期工作件数、今日待办未完成件数 */
 function tvYijiText(today,anchors,workCount,todoUndone,lowMood){
   var yi=[],ji=[];
   var hasSwim=false,hasBarre=false,hasMovie=false,hasHouse=false,hasMenu=false;
@@ -4887,13 +4887,13 @@ function tvYijiText(today,anchors,workCount,todoUndone,lowMood){
   });
   function anchorBy(substr){var f=null;(anchors||[]).forEach(function(a){if(!f&&(a.text||"").indexOf(substr)>=0)f=a;});return f;}
   if(hasSwim){var sa=anchorBy("游泳");yi.push("游泳（"+(sa&&sa.time&&Number(sa.time.slice(0,2))>=17?"今晚":"今天")+"有游泳安排"+(sa&&sa.time?"，"+sa.time+" 出门或开始":"")+"）");}
-  if(hasBarre){var ba=anchorBy("芭杆");yi.push("芭杆（今天有芭杆锚点"+(ba&&ba.time?"，"+ba.time+" 开始":"")+"）");}
-  if(hasMovie)yi.push("看电影（今天有电影锚点）");
-  if(hasHouse)yi.push("洗衣和打扫（今天有家务锚点）");
-  if(hasMenu)yi.push("定食谱和采购（今天有这个锚点）");
+  if(hasBarre){var ba=anchorBy("芭杆");yi.push("芭杆（今天有芭杆农时"+(ba&&ba.time?"，"+ba.time+" 开始":"")+"）");}
+  if(hasMovie)yi.push("看电影（今天有电影农时）");
+  if(hasHouse)yi.push("洗衣和打扫（今天有家务农时）");
+  if(hasMenu)yi.push("定食谱和采购（今天有这个农时）");
   if(workCount>0)yi.push("先处理到期工作（今天有 "+workCount+" 件到期或逾期）");
   if(todoUndone>0)yi.push("做完手头待办（今天还有 "+todoUndone+" 件未完成）");
-  if(yi.length===0)yi.push("按今天的锚点过完今天（今日锚点 "+(anchors||[]).length+" 项）");
+  if(yi.length===0)yi.push("按今天的农时过完今天（今日农时 "+(anchors||[]).length+" 项）");
   if(workCount>0){
     ji.push(lowMood?("把 "+workCount+" 件到期事项全堆到明天（今天可以先挑一件做）"):("把 "+workCount+" 件到期或逾期的工作事项拖到明天"));
   }else{
@@ -4975,7 +4975,7 @@ function newsSectionHtml(){
     +'<h4 class="font-pixel" style="font-size:24px;margin:16px 0 0;color:#2c4a73">'+esc(subtitle)+"</h4>";
   if(mode==="morning"){
     if(snap.items.length===0){
-      h+='<p class="small" style="line-height:1.8;margin-top:12px">今天还没有排上安排。待办、锚点和工作事项都还空着——先这样，安排等有了再摆出来。</p>';
+      h+='<p class="small" style="line-height:1.8;margin-top:12px">今天还没有排上安排。待办、农时和工作事项都还空着——先这样，安排等有了再摆出来。</p>';
     }else{
       h+='<ul class="small" style="list-style:none;margin:12px 0 0;padding:0">'
         +snap.items.map(function(it){return '<li style="border-bottom:1px dashed #b99b62;padding:6px 0;line-height:1.7">'+esc(it)+"</li>";}).join("")+"</ul>";
@@ -5069,7 +5069,7 @@ function lifePage(){
   var todayAnchors=anchorsForDate(today);
   if(todayAnchors.length>0){
     var anchorsResolved=todayAnchors.filter(function(a){return !!anchorStatus(a.id,today);}).length;
-    h+=panel("今日锚点（"+anchorsResolved+"/"+todayAnchors.length+"）","pin",anchorChecklistHtml(today));
+    h+=panel("今日农时（"+anchorsResolved+"/"+todayAnchors.length+"）","pin",anchorChecklistHtml(today));
   }
   var quick='<form class="row" data-form="todo-quick-add" style="margin-bottom:8px"><input class="pix-input" name="text" aria-label="快速添加今日待办" placeholder="快速添加今日待办"><button type="submit" class="pix-btn pix-btn-green" aria-label="添加今日待办">＋ 添加</button></form>'
     +(my.length===0?'<p class="small dim" style="margin:0">今天还没有待办。</p>'
@@ -5130,7 +5130,7 @@ function lifePage(){
 }
 
 /* ============ 页面：每日计划 ============ */
-/* ============ 固定锚点 / 周期事务：渲染组件 ============ */
+/* ============ 固定农时 / 周期事务：渲染组件 ============ */
 var DOW_ORDER=[1,2,3,4,5,6,0];
 function dowButtonsHtml(selected,act){
   return DOW_ORDER.map(function(d){
@@ -5140,7 +5140,7 @@ function dowButtonsHtml(selected,act){
 }
 function anchorChecklistHtml(date){
   var list=anchorsForDate(date);
-  if(list.length===0)return '<p class="small dim" style="margin:0">这一天没有生效的固定锚点。</p>';
+  if(list.length===0)return '<p class="small dim" style="margin:0">这一天没有生效的固定农时。</p>';
   return '<ul style="list-style:none;margin:0;padding:0">'+list.map(function(a){
     var st=anchorStatus(a.id,date);
     return '<li class="paper-panel small" style="padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
@@ -5150,7 +5150,7 @@ function anchorChecklistHtml(date){
       +(a.note?'<span class="xs dim">'+esc(a.note)+"</span>":"")
       +tag("固定","pix-tag-blue")
       +(st==="skip"?tag("已跳过","pix-tag-gray"):"")
-      +'<span style="margin-left:auto"><button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-skip" data-id="'+a.id+'" data-date="'+date+'" aria-label="'+(st==="skip"?"恢复锚点 ":"跳过锚点 ")+esc(a.text)+'">'+(st==="skip"?"恢复":"跳过")+"</button></span></li>";
+      +'<span style="margin-left:auto"><button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-skip" data-id="'+a.id+'" data-date="'+date+'" aria-label="'+(st==="skip"?"恢复农时 ":"跳过农时 ")+esc(a.text)+'">'+(st==="skip"?"恢复":"跳过")+"</button></span></li>";
   }).join("")+"</ul>";
 }
 var anchorEditState=null;
@@ -5167,22 +5167,22 @@ function anchorEditorModal(){
   if(!anchorEditState)return;
   var a=anchorEditState;
   var weekly=a.days!=null;
-  modal("编辑固定锚点",
+  modal("编辑固定农时",
     '<form data-form="anchor-save"><input type="hidden" name="id" value="'+(a.id==null?"":a.id)+'">'
-    +'<label class="field"><span>内容</span><input class="pix-input" name="text" value="'+esc(a.text)+'" aria-label="锚点内容"></label>'
-    +'<div class="row"><label class="field" style="flex:1"><span>时间（可空）</span><input class="pix-input" name="time" type="time" value="'+esc(a.time||"")+'" aria-label="锚点时间"></label>'
-    +'<label class="field" style="flex:2"><span>备注（可空）</span><input class="pix-input" name="note" value="'+esc(a.note||"")+'" aria-label="锚点备注"></label></div>'
+    +'<label class="field"><span>内容</span><input class="pix-input" name="text" value="'+esc(a.text)+'" aria-label="农时内容"></label>'
+    +'<div class="row"><label class="field" style="flex:1"><span>时间（可空）</span><input class="pix-input" name="time" type="time" value="'+esc(a.time||"")+'" aria-label="农时时间"></label>'
+    +'<label class="field" style="flex:2"><span>备注（可空）</span><input class="pix-input" name="note" value="'+esc(a.note||"")+'" aria-label="农时备注"></label></div>'
     +'<div class="field"><span>生效范围</span><div class="row">'
     +'<button type="button" class="pix-btn '+(weekly?"pix-btn-ghost":"pix-btn-green")+'" data-act="anchor-edit-mode" data-mode="daily" aria-label="每天生效">每日</button>'
     +'<button type="button" class="pix-btn '+(weekly?"pix-btn-green":"pix-btn-ghost")+'" data-act="anchor-edit-mode" data-mode="weekly" aria-label="按星期生效">每周</button></div>'
     +(weekly?'<div class="row wrap" style="margin-top:8px" role="group" aria-label="选择星期">'+dowButtonsHtml(anchorEditState.days,"anchor-edit-day")+"</div>":"")
     +"</div>"
-    +'<button type="submit" class="pix-btn pix-btn-green" style="width:100%" aria-label="保存锚点">保存</button></form>');
+    +'<button type="submit" class="pix-btn pix-btn-green" style="width:100%" aria-label="保存农时">保存</button></form>');
 }
 function anchorTemplateHtml(){
   var af=ui.anchorForm;var weekly=af.mode==="weekly";
-  var h='<p class="small dim" style="margin:0 0 12px">锚点只是固定下来的作息节点，其余时段不排。模板改动只影响之后的日子；某一天临时跳过，不改模板。锚点完成不发金币。</p>';
-  if(S.anchors.length===0)h+=emptyState("pin","还没有固定锚点，用下面表单加一条。");
+  var h='<p class="small dim" style="margin:0 0 12px">农时只是固定下来的作息节点，其余时段不排。模板改动只影响之后的日子；某一天临时跳过，不改模板。农时完成不发金币。</p>';
+  if(S.anchors.length===0)h+=emptyState("pin","还没有固定农时，用下面表单加一条。");
   else h+='<ul style="list-style:none;margin:0 0 16px;padding:0">'+S.anchors.map(function(a){
     return '<li class="paper-panel small" style="padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +tag(anchorDaysLabel(a),"pix-tag-green")
@@ -5191,19 +5191,19 @@ function anchorTemplateHtml(){
       +(a.note?'<span class="xs dim">'+esc(a.note)+"</span>":"")
       +(!a.enabled?tag("已停用","pix-tag-gray"):"")
       +'<span style="margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap">'
-      +'<button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-enabled" data-id="'+a.id+'" aria-label="'+(a.enabled?"停用":"启用")+"锚点 "+esc(a.text)+'">'+(a.enabled?"停用":"启用")+"</button>"
-      +'<button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-edit" data-id="'+a.id+'" aria-label="编辑锚点 '+esc(a.text)+'">编辑</button>'
-      +'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="anchor-del" data-id="'+a.id+'" aria-label="删除锚点 '+esc(a.text)+'">删除</button></span></li>';
+      +'<button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-enabled" data-id="'+a.id+'" aria-label="'+(a.enabled?"停用":"启用")+"农时 "+esc(a.text)+'">'+(a.enabled?"停用":"启用")+"</button>"
+      +'<button type="button" class="pix-btn pix-btn-ghost" data-act="anchor-edit" data-id="'+a.id+'" aria-label="编辑农时 '+esc(a.text)+'">编辑</button>'
+      +'<button type="button" class="pix-btn pix-btn-ghost" style="color:#a33" data-act="anchor-del" data-id="'+a.id+'" aria-label="删除农时 '+esc(a.text)+'">删除</button></span></li>';
   }).join("")+"</ul>";
   h+='<form data-form="anchor-add"><div class="row wrap">'
-    +'<input class="pix-input" name="text" style="flex:2 1 160px" aria-label="新锚点内容" placeholder="新锚点，如：睡前阅读">'
-    +'<input class="pix-input" name="time" type="time" style="flex:0 1 130px" aria-label="锚点时间（可空）">'
-    +'<input class="pix-input" name="note" style="flex:1 1 140px" aria-label="锚点备注（可空）" placeholder="备注（可空）"></div>'
-    +'<div class="row wrap items-center" style="margin-top:8px" role="group" aria-label="锚点生效范围">'
+    +'<input class="pix-input" name="text" style="flex:2 1 160px" aria-label="新农时内容" placeholder="新农时，如：睡前阅读">'
+    +'<input class="pix-input" name="time" type="time" style="flex:0 1 130px" aria-label="农时时间（可空）">'
+    +'<input class="pix-input" name="note" style="flex:1 1 140px" aria-label="农时备注（可空）" placeholder="备注（可空）"></div>'
+    +'<div class="row wrap items-center" style="margin-top:8px" role="group" aria-label="农时生效范围">'
     +'<button type="button" class="pix-btn '+(weekly?"pix-btn-ghost":"pix-btn-green")+'" data-act="anchor-mode" data-mode="daily" aria-label="每天生效">每日</button>'
     +'<button type="button" class="pix-btn '+(weekly?"pix-btn-green":"pix-btn-ghost")+'" data-act="anchor-mode" data-mode="weekly" aria-label="按星期生效">每周</button>'
     +(weekly?dowButtonsHtml(af.days,"anchor-day"):"")
-    +'<button type="submit" class="pix-btn pix-btn-green" aria-label="添加锚点">＋ 添加锚点</button></div></form>';
+    +'<button type="submit" class="pix-btn pix-btn-green" aria-label="添加农时">＋ 添加农时</button></div></form>';
   return h;
 }
 function cycleTypeFieldsHtml(cur,changeKind){
@@ -5362,7 +5362,7 @@ function planListRowHtml(t,extra){
     +'<button type="button" class="xs" style="padding:0 4px;color:#8a6a45;background:none;border:0;cursor:pointer;font-family:inherit" data-act="todo-edit" data-id="'+t.id+'" aria-label="编辑待办 '+esc(t.text)+'">编辑</button>'
     +'<button type="button" class="xs" style="padding:0 4px;color:#a33;background:none;border:0;cursor:pointer;font-family:inherit" data-act="todo-del" data-id="'+t.id+'" aria-label="删除待办 '+esc(t.text)+'">删除</button></li>';
 }
-/* 每日计划页六区：①作息锚点（今日清单，与「今日」页共用同一份 anchorLogs，勾选/跳过即时同步；模板管理紧随其后）
+/* 每日计划页六区：①农时（今日清单，与「今日」页共用同一份 anchorLogs，勾选/跳过即时同步；模板管理紧随其后）
    ②今天待办 ③逾期 ④接下来 ⑤周期事务 ⑥采购清单。原日常SOP 页的三区已整体并入本页，数据结构与存储键不变。 */
 function planPage(){
   var today=todayStr();
@@ -5370,8 +5370,8 @@ function planPage(){
   var h='<div class="stack">';
   var todayAnchors=anchorsForDate(today);
   var anchorsResolved=todayAnchors.filter(function(a){return !!anchorStatus(a.id,today);}).length;
-  h+=panel("作息锚点 · 今日（"+anchorsResolved+"/"+todayAnchors.length+"）","pin",anchorChecklistHtml(today));
-  h+=panel("锚点模板","scroll",anchorTemplateHtml());
+  h+=panel("农时 · 今日（"+anchorsResolved+"/"+todayAnchors.length+"）","pin",anchorChecklistHtml(today));
+  h+=panel("农时模板","scroll",anchorTemplateHtml());
   h+=panel("每日计划 · 今天","backpack",
     '<p class="small dim" style="margin:0 0 12px">星期'+weekdayOf(today)+" · 完成待办每件 +10 G</p>"
     +'<form class="row wrap" style="margin-bottom:12px" data-form="todo-add"><input class="pix-input" name="text" style="flex:1;min-width:140px" aria-label="新待办内容" placeholder="新待办"><input type="date" class="pix-input" name="date" style="width:170px" aria-label="待办日期" value="'+today+'"><button type="submit" class="pix-btn pix-btn-green" aria-label="添加待办">＋ 添加</button></form>'
@@ -5509,8 +5509,8 @@ function moodEditorModal(date){
 /* ============ 页面：农场日历（双空间 · 周/月/日三层视图） ============
    纯读现有数据聚合展示（todos / anchors / cycles / workItems / moods / studyLogs /
    workouts / reviews），零新增存储字段。硬规则：安排 ≠ 记录——视图里能勾的只有
-   待办、锚点、周期事务、工作事项本体，勾掉任何计划永不生成健身/学习记录；
-   运动锚点只给「记一笔健身」预填入口，用户确认保存才生成记录。 */
+   待办、农时、周期事务、工作事项本体，勾掉任何计划永不生成健身/学习记录；
+   运动农时只给「记一笔健身」预填入口，用户确认保存才生成记录。 */
 function calFocusDate(){return ui.calDate||todayStr();}
 function calMoodOf(date){var m=null;S.moods.forEach(function(x){if(x.date===date)m=x;});return m;}
 function calCyclesDueOn(date){return S.cycles.filter(function(c){return c.active&&c.nextDue===date;});}
@@ -5521,7 +5521,7 @@ function calExerciseType(a){
   return null;
 }
 function calExerciseMinutes(type){return type==="游泳"?60:(type==="芭杆"?40:30);}
-/* 运动类锚点勾完后旁出的快捷行：只打开预填表单，确认才存，不确认不生成 */
+/* 运动类农时勾完后旁出的快捷行：只打开预填表单，确认才存，不确认不生成 */
 function calExerciseRowsHtml(date){
   var rows="";
   anchorsForDate(date).forEach(function(a){
@@ -5847,7 +5847,7 @@ function calendarPage(){
 }
 function calWorkoutModal(type,date,minutes){
   modal("记一笔健身",
-    '<p class="small dim" style="margin:0 0 12px">勾完锚点不等于有了运动记录。确认下面这笔再保存；不保存，就不会生成任何记录。</p>'
+    '<p class="small dim" style="margin:0 0 12px">勾完农时不等于有了运动记录。确认下面这笔再保存；不保存，就不会生成任何记录。</p>'
     +'<form data-form="cal-workout-add">'
     +'<label class="field"><span>运动类型</span><select class="pix-input" name="type" aria-label="运动类型">'+WORKOUT_TYPES.map(function(t){return '<option value="'+t+'"'+(t===type?" selected":"")+">"+t+"</option>";}).join("")+"</select></label>"
     +'<div class="row wrap"><label class="field" style="flex:1 1 130px"><span>时长（分钟，可改）</span><input type="number" class="pix-input" name="minutes" min="0" max="1440" value="'+minutes+'" aria-label="时长分钟"></label>'
@@ -7252,7 +7252,7 @@ document.addEventListener("click",function(e){
       var nhb=S.habitLogs.filter(function(l){return l.habitId===hb3.id;}).length;
       openConfirm("彻底删除习惯","将连带删除习惯「"+hb3.name+"」和它的 "+nhb+" 条打卡记录，删了只能靠刚才的撤销提示恢复。","habit-del",hb3.id);
       break;}
-    /* 固定锚点 */
+    /* 固定农时 */
     case "anchor-toggle":mutate(function(){return toggleAnchor(Number(el.dataset.id),el.dataset.date);});break;
     case "anchor-skip":mutate(function(){return skipAnchor(Number(el.dataset.id),el.dataset.date);});break;
     case "anchor-mode":ui.anchorForm.mode=el.dataset.mode;render();break;
@@ -7262,7 +7262,7 @@ document.addEventListener("click",function(e){
       render();break;}
     case "anchor-enabled":mutate(function(){var a=findById(S.anchors,Number(el.dataset.id));if(a){a.enabled=!a.enabled;touch(a);}});break;
     case "anchor-edit":{var a2=findById(S.anchors,Number(el.dataset.id));if(a2)openAnchorEditor(a2);break;}
-    case "anchor-del":delWithUndo("锚点已删除",function(){deleteAnchor(Number(el.dataset.id));});break;
+    case "anchor-del":delWithUndo("农时已删除",function(){deleteAnchor(Number(el.dataset.id));});break;
     case "anchor-edit-mode":{
       syncAnchorFormToState();if(!anchorEditState)break;
       anchorEditState.days=el.dataset.mode==="weekly"?(anchorEditState.days&&anchorEditState.days.length?anchorEditState.days:[1]):null;
@@ -7661,7 +7661,7 @@ document.addEventListener("submit",function(e){
       mutate(function(){
         saveReview(date,rg,rs,rr);
         draftClear("review:"+date);
-        /* 复盘联动：这一天有「感恩日记」锚点时，保存复盘即视为完成，不用再去今日页勾一次 */
+        /* 复盘联动：这一天有「感恩日记」农时时，保存复盘即视为完成，不用再去今日页勾一次 */
         anchorsForDate(date).forEach(function(a){
           if(a.text.indexOf("感恩")>=0&&anchorStatus(a.id,date)!=="done")setAnchorStatus(a.id,date,"done");
         });
@@ -7697,7 +7697,7 @@ document.addEventListener("submit",function(e){
     case "workout-add":{
       mutate(function(){addWorkout(fd("type"),Number(fd("minutes"))||0,fd("note"),fd("date")||todayStr());});break;}
     case "cal-workout-add":{
-      /* 日历里运动锚点的「记一笔健身」：走到这一步才是用户确认过，确认才生成健身记录 */
+      /* 日历里运动农时的「记一笔健身」：走到这一步才是用户确认过，确认才生成健身记录 */
       closeModal();
       mutate(function(){addWorkout(fd("type"),Number(fd("minutes"))||0,fd("note"),fd("date")||todayStr());});break;}
     case "workout-save":{
