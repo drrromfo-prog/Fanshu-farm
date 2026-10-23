@@ -753,7 +753,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -778,6 +778,7 @@ function normalizeState(){
   if(!S.unlocked||typeof S.unlocked!=="object"||Array.isArray(S.unlocked))S.unlocked={};
   if(!Array.isArray(S.newsDays))S.newsDays=[];
   if(!S.stardrops||typeof S.stardrops!=="object"||Array.isArray(S.stardrops))S.stardrops={};
+  if(!S.garden||typeof S.garden!=="object"||Array.isArray(S.garden))S.garden={};
   if(!S.skillGrants||typeof S.skillGrants!=="object"||Array.isArray(S.skillGrants))S.skillGrants={};
   if(!S.notes||typeof S.notes!=="object"||Array.isArray(S.notes))S.notes={date:"",noteId:null,page:null,corner:null,found:[],cycle:[]};
   if(!Array.isArray(S.notes.found))S.notes.found=[];
@@ -1074,6 +1075,16 @@ function mergeStates(L,R){
     var sg={};
     [L.skillGrants,R.skillGrants].forEach(function(o){if(o&&typeof o==="object"&&!Array.isArray(o))Object.keys(o).forEach(function(k){var v=Number(o[k])||0;if(!sg[k]||v>sg[k])sg[k]=v;});});
     out.skillGrants=sg;
+  })();
+  /* 习惯菜园：按 habitId 逐个合并，harvests/cycle 取较大者（crop 由 id 哈希派生，两边必一致） */
+  (function(){
+    var gm={};
+    [L.garden,R.garden].forEach(function(o){if(o&&typeof o==="object"&&!Array.isArray(o))Object.keys(o).forEach(function(k){
+      var v=o[k]||{};var hv=Number(v.harvests)||0,cyc=Number(v.cycle)||0;
+      if(!gm[k])gm[k]={crop:gardenCropFor(k).key,harvests:hv,cycle:cyc};
+      else{gm[k].harvests=Math.max(gm[k].harvests,hv);gm[k].cycle=Math.max(gm[k].cycle,cyc);}
+    });});
+    out.garden=gm;
   })();
   /* 钱包从账本推导：期初基数 + 合并后账本增量之和 */
   out._baseGold=typeof L._baseGold==="number"?L._baseGold:(typeof R._baseGold==="number"?R._baseGold:0);
@@ -1452,6 +1463,168 @@ function habitView(h){
     checkedToday:logs.some(function(l){return l.date===today;})
   };
 }
+/* ============ 习惯菜园（习惯页顶部）：一习惯一株，作物按 habit id 哈希固定分配 ============
+   数据：S.garden[habitId]={crop,harvests,cycle}；crop 由 id 哈希派生（存下只是缓存，派生为准）。
+   本轮计数 = 该习惯 habitLogs 总条数 - 10*cycle（派生，不另存计数）。
+   阶段：0 种子 / >=2 新芽 / >=4 小苗 / >=7 开花 / >=10 成熟（可收获 +15G，幂等键 garden:<id>:<cycle>）。
+   后续随机事件「作物仙女」往 gardenProgress(habitId) 的返回结构里加成即可。 */
+var GARDEN_CROPS=[
+  {key:"pumpkin",label:"南瓜",main:"#e67e22",dark:"#c05f10",flower:"#ffd83d"},
+  {key:"strawberry",label:"草莓",main:"#e13b3b",dark:"#b02828",flower:"#fff6da"},
+  {key:"corn",label:"玉米",main:"#ffd83d",dark:"#d9a41f",flower:"#f5c56b"},
+  {key:"sunflower",label:"向日葵",main:"#f0a832",dark:"#6b3f1d",flower:"#ffd83d"},
+  {key:"carrot",label:"胡萝卜",main:"#f07818",dark:"#c85a08",flower:"#fff6da"},
+  {key:"blueberry",label:"蓝莓",main:"#3a6ea8",dark:"#2c4a73",flower:"#f6c6d8"},
+  {key:"eggplant",label:"茄子",main:"#7a4a9e",dark:"#5a3378",flower:"#c9a8e8"},
+  {key:"grape",label:"葡萄",main:"#8848c8",dark:"#65309e",flower:"#e8dcc0"}
+];
+var GARDEN_STAGE_LABELS=["种子","新芽","小苗","开花","成熟"];
+function gardenCropFor(habitId){
+  var str=String(habitId),h=0;
+  for(var i=0;i<str.length;i++){h=((h*31)+str.charCodeAt(i))>>>0;}
+  return GARDEN_CROPS[h%GARDEN_CROPS.length];
+}
+function gardenEntry(habitId){
+  if(!S.garden||typeof S.garden!=="object"||Array.isArray(S.garden))S.garden={};
+  var g=S.garden[habitId];
+  if(!g||typeof g!=="object"){g={crop:gardenCropFor(habitId).key,harvests:0,cycle:0};S.garden[habitId]=g;}
+  if(typeof g.harvests!=="number"||g.harvests<0)g.harvests=0;
+  if(typeof g.cycle!=="number"||g.cycle<0)g.cycle=0;
+  g.crop=gardenCropFor(habitId).key;
+  return g;
+}
+function gardenStageOf(count){
+  if(count>=10)return 4; if(count>=7)return 3; if(count>=4)return 2; if(count>=2)return 1; return 0;
+}
+/* 蔫态判定（只影响视觉，不掉进度）：
+   日型：已有打卡记录，且昨天没打卡、今天也还没打卡（即已错过昨天的应打卡日；无记录的新习惯不蔫）。
+   周型：上一周（周一至周日）打卡数 < weeklyTarget，且本周至今 0 次打卡。 */
+function gardenWilted(h){
+  var today=todayStr();
+  var logs=S.habitLogs.filter(function(l){return l.habitId===h.id;});
+  if(logs.some(function(l){return l.date===today;}))return false;
+  if(h.kind==="weekly"){
+    var ws=weekStartOf(today);
+    var pws=shiftDate(ws,-7),pwe=shiftDate(ws,-1);
+    var prev=logs.filter(function(l){return l.date>=pws&&l.date<=pwe;}).length;
+    var cur=logs.filter(function(l){return l.date>=ws&&l.date<=today;}).length;
+    return prev<(h.weeklyTarget||3)&&cur===0;
+  }
+  if(logs.length===0)return false;
+  var yest=shiftDate(today,-1);
+  return !logs.some(function(l){return l.date===yest;});
+}
+/* 本轮进度单一入口：返回 {count,stage,stageLabel,crop,cropLabel,total,cycle,harvests,wilted,mature} */
+function gardenProgress(habitId){
+  var h=findById(S.habits,habitId);
+  var g=gardenEntry(habitId);
+  var total=S.habitLogs.filter(function(l){return l.habitId===habitId;}).length;
+  var count=Math.max(0,total-10*g.cycle);
+  var stage=gardenStageOf(count);
+  return {count:count,stage:stage,stageLabel:GARDEN_STAGE_LABELS[stage],
+    crop:g.crop,cropLabel:(GARDEN_CROPS.filter(function(c){return c.key===g.crop;})[0]||GARDEN_CROPS[0]).label,
+    total:total,cycle:g.cycle,harvests:g.harvests,
+    wilted:h?gardenWilted(h):false,mature:count>=10};
+}
+/* 作物像素图：5 阶段递进（种子->新芽->小苗->开花->成熟结果）+ 蔫态（换枯色、整体耷拉右倾下沉） */
+function gardenCropSvg(cropKey,stage,wilted,size){
+  var crop=GARDEN_CROPS[0];
+  GARDEN_CROPS.forEach(function(c){if(c.key===cropKey)crop=c;});
+  var stem=wilted?"#7a6a42":"#3d7a24",leaf=wilted?"#8a7a4a":"#5da33c",leaf2=wilted?"#6f6240":"#4c9433";
+  var fruit=wilted?"#a08b6d":crop.main,fruitD=wilted?"#8a7557":crop.dark,flower=wilted?"#b0a090":crop.flower;
+  var dx=wilted?1:0,dy=wilted?1:0;
+  var r=[[1,14,14,2,"#6b3f1d"],[1,14,14,1,"#8a5a2b"],[4,15,2,1,"#5a3418"],[10,15,2,1,"#5a3418"]];
+  if(stage<=0){
+    r.push([7+dx,12+dy,3,2,wilted?"#9a8a6d":"#d8b98a"],[8+dx,12+dy,1,1,"#fff6da"]);
+    return rectsSvg(r,"0 0 16 16",size||44);
+  }
+  if(stage===1){
+    r.push([7+dx,11+dy,2,3,stem],[4+dx,10+dy,4,2,leaf],[8+dx,9+dy,4,2,leaf2]);
+    return rectsSvg(r,"0 0 16 16",size||44);
+  }
+  if(stage===2){
+    r.push([7+dx,8+dy,2,6,stem],[3+dx,9+dy,5,2,leaf],[8+dx,7+dy,5,2,leaf2],[5+dx,6+dy,3,2,leaf]);
+    return rectsSvg(r,"0 0 16 16",size||44);
+  }
+  if(stage===3){
+    r.push([7+dx,6+dy,2,8,stem],[3+dx,8+dy,5,2,leaf],[8+dx,6+dy,5,2,leaf2],[4+dx,4+dy,3,2,leaf]);
+    r.push([6+dx,1+dy,4,3,flower],[7+dx,2+dy,2,1,fruitD]);
+    r.push([11+dx,4+dy,3,3,flower],[12+dx,5+dy,1,1,fruitD]);
+    return rectsSvg(r,"0 0 16 16",size||44);
+  }
+  /* 成熟：按作物形态结果 */
+  r.push([7+dx,6+dy,2,8,stem],[3+dx,8+dy,5,2,leaf],[8+dx,6+dy,5,2,leaf2],[4+dx,4+dy,3,2,leaf]);
+  if(crop.key==="pumpkin"){
+    r.push([4,10,8,4,fruit],[6,10,1,4,fruitD],[9,10,1,4,fruitD],[7,9,2,1,stem]);
+  }else if(crop.key==="carrot"){
+    r.push([6+dx,2+dy,1,3,leaf],[8+dx,1+dy,1,4,leaf2],[10+dx,2+dy,1,3,leaf]);
+    r.push([6,11,4,2,fruit],[7,13,2,1,fruitD]);
+  }else if(crop.key==="sunflower"){
+    r.push([5+dx,0+dy,6,1,flower],[4+dx,1+dy,8,3,flower],[6+dx,1+dy,4,2,fruitD],[7+dx,2+dy,2,1,"#4a2c14"]);
+  }else if(crop.key==="corn"){
+    r.push([8+dx,4+dy,3,7,fruit],[9+dx,5+dy,1,5,fruitD],[5+dx,7+dy,3,4,leaf2]);
+  }else if(crop.key==="grape"){
+    r.push([5+dx,3+dy,6,2,leaf]);
+    r.push([5+dx,5+dy,2,2,fruit],[8+dx,5+dy,2,2,fruit],[6+dx,7+dy,2,2,fruitD],[9+dx,7+dy,2,2,fruit],[7+dx,9+dy,2,2,fruitD]);
+  }else if(crop.key==="eggplant"){
+    r.push([5+dx,4+dy,3,2,leaf2]);
+    r.push([5+dx,6+dy,4,6,fruit],[6+dx,6+dy,2,1,fruitD],[10+dx,8+dy,3,4,fruit]);
+  }else if(crop.key==="strawberry"){
+    r.push([4,9,4,4,fruit],[9,10,3,3,fruit],[5,9,2,1,leaf],[6,10,1,1,"#fff6da"],[10,11,1,1,"#fff6da"]);
+  }else{ /* blueberry */
+    r.push([4+dx,3+dy,8,3,leaf]);
+    r.push([5+dx,6+dy,2,2,fruit],[8+dx,7+dy,2,2,fruitD],[10+dx,6+dy,2,2,fruit],[7+dx,9+dy,2,2,fruit]);
+  }
+  return rectsSvg(r,"0 0 16 16",size||44);
+}
+/* 收获：成熟才可点；幂等键 garden:<habitId>:<cycle>，同键已发过金则整笔不再执行（harvests/cycle 只 +1） */
+function harvestGarden(habitId){
+  var h=findById(S.habits,habitId);if(!h)return[];
+  var pr=gardenProgress(habitId);
+  if(!pr.mature)return[];
+  var idem="garden:"+habitId+":"+pr.cycle;
+  if(ledgerHasIdem(idem))return[];
+  var g=gardenEntry(habitId);
+  addLedger("gold",15,"习惯菜园收获："+pr.cropLabel+"（"+h.name+"）",todayStr(),idem);
+  g.harvests+=1;g.cycle+=1;
+  return [{kind:"gardenHarvest",title:"收获："+pr.cropLabel,sub:h.name+" · +15 G · 已重新播种",icon:"starfruit",small:true}];
+}
+/* 收获架汇总：全部习惯（在册+已养成+已归档）garden.harvests 按 crop 汇总 */
+function gardenShelfTotals(){
+  var totals={};
+  GARDEN_CROPS.forEach(function(c){totals[c.key]=0;});
+  S.habits.forEach(function(h){
+    var g=(S.garden&&S.garden[h.id])?S.garden[h.id]:null;
+    var hv=g?(g.harvests||0):0;
+    if(hv>0)totals[gardenCropFor(h.id).key]+=hv;
+  });
+  return totals;
+}
+function gardenPanelHtml(active){
+  var shelf=gardenShelfTotals();
+  var shelfHtml='<div style="margin-top:12px;border-top:2px dashed #c9b18a;padding-top:10px"><p class="xs dim" style="margin:0 0 6px">收获架（累计收获，归档习惯的收获也计在里面）</p>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+GARDEN_CROPS.map(function(c){
+      var n=shelf[c.key]||0;
+      if(n>0)return '<span class="pix-tag pix-tag-green" style="display:inline-flex;align-items:center;gap:4px">'+gardenCropSvg(c.key,4,false,18)+esc(c.label)+" × "+n+"</span>";
+      return '<span class="pix-tag" style="display:inline-flex;align-items:center;gap:4px;opacity:.45;filter:grayscale(1)">'+gardenCropSvg(c.key,4,false,18)+esc(c.label)+" × 0</span>";
+    }).join("")+"</div></div>";
+  var plots;
+  if(active.length===0){
+    plots='<p class="small dim" style="margin:0">还没有在册习惯，菜园暂时空着。</p>';
+  }else{
+    plots='<div class="grid-cards3">'+active.map(function(x){
+      var pr=gardenProgress(x.id);
+      return '<article class="paper-panel" style="padding:10px;text-align:center">'
+        +'<div style="display:flex;justify-content:center">'+gardenCropSvg(pr.crop,pr.stage,pr.wilted,46)+"</div>"
+        +'<p class="xs" style="margin:4px 0 0"><b>'+esc(x.name)+'</b> · '+esc(pr.cropLabel)+"</p>"
+        +'<p class="xs dim" style="margin:2px 0 0">'+(pr.wilted?"有点蔫了 · ":pr.stageLabel+" · ")+"本轮 "+Math.min(pr.count,10)+" / 10 次</p>"
+        +(pr.mature?'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" style="margin-top:6px" data-act="garden-harvest" data-id="'+x.id+'" aria-label="收获 '+esc(x.name)+" 的 "+esc(pr.cropLabel)+'">收获 +15 G</button>':"")
+        +"</article>";
+    }).join("")+"</div>";
+  }
+  return panel("习惯菜园","sprout",'<p class="small dim" style="margin:0 0 12px">每个习惯一株作物，种类按习惯固定分配。打卡长大：本轮 2 次新芽、4 次小苗、7 次开花、10 次成熟，成熟可收获 +15 G，收获后重新播种。错过打卡会蔫，只影响样子，不掉进度。</p>'+plots+shelfHtml);
+}
+
 
 /* ============ 庆祝横幅队列 ============ */
 var bannerQueue=[],bannerSeq=0,dayClearSeq=0,bannerTimer=null;
@@ -4180,6 +4353,7 @@ function habitsPage(){
   var grads=S.habits.filter(function(x){return x.graduated&&!x.archived;});
   var archHabits=S.habits.filter(function(x){return x.archived;});
   var h='<div class="stack">';
+  h+=gardenPanelHtml(active);
   h+=panel("习惯花园","flower",
     '<p class="small dim" style="margin:0 0 12px">每日型：每天记一次，当天第一次 +5 G。每周型：记一次 +2 G，本周达标再 +15 G 和 10 积分。连续四周达标，转入「已养成」，一次 +50 G 和 30 积分。</p>'
     +'<form data-form="habit-add" style="margin-bottom:16px"><div class="row wrap">'
@@ -5118,6 +5292,7 @@ document.addEventListener("click",function(e){
     case "habit-kind":ui.habitForm.kind=el.dataset.kind;render();break;
     case "habit-icon":ui.habitForm.icon=el.dataset.icon;render();break;
     case "habit-toggle":mutate(function(){return toggleHabitToday(Number(el.dataset.id));});break;
+    case "garden-harvest":mutate(function(){return harvestGarden(Number(el.dataset.id));});break;
     case "habit-archive":mutate(function(){var hb=findById(S.habits,Number(el.dataset.id));if(hb){hb.archived=true;touch(hb);}});break;
     case "habit-restore":mutate(function(){var hb2=findById(S.habits,Number(el.dataset.id));if(hb2){hb2.archived=false;touch(hb2);}});break;
     case "habit-del":{
