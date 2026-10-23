@@ -3074,6 +3074,127 @@ function checkSeasonRewards(){
   return banners;
 }
 
+/* ---------- 10.6 博物馆图鉴 ---------- */
+/* 展品全部派生自书房自有数据（不接外部站、不做事件累积计数器）：
+   成果 = studyLogs 中 kind 为 result（留成果，studyKindOf 口径）；发现 = studyLogs 中 starred 为 true（我的发现星标）；
+   阅读/观影 = studyTopics 按标题与笔记的媒介关键词分类，且已完成（archived 为 true 或 progressPct 达到 100）；
+   特别 = 陨石碎片（随机事件第 11 项预留，见 museumMeteorInfoIn 对接口径）。
+   归类优先序：成果 > 发现 > 阅读 > 观影 > 特别；同一条记录按来源 id 只计一件、先到先得。
+   里程碑：馆藏总量首次达到 10 / 25 / 50 件各 +10 积分，幂等键 museum:10 / museum:25 / museum:50，总量回落不追回、再涨不重发。 */
+ICONS.museum=[[7,1,2,2,"#b03a2e"],[2,3,12,1,"#8a5a2b"],[1,4,14,1,"#6b3f1d"],[3,5,2,6,"#fbebc0"],[7,5,2,6,"#fbebc0"],[11,5,2,6,"#fbebc0"],[2,11,12,1,"#8a5a2b"],[2,12,12,1,"#6b3f1d"],[1,13,14,1,"#4a2c14"]];
+ICONS.meteor=[[10,8,5,5,"#7a4a8a"],[11,7,3,1,"#9a6ab0"],[10,13,3,1,"#5d3a6e"],[12,9,2,2,"#c9a8e0"],[2,2,3,1,"#ffd83d"],[4,4,3,1,"#f0a832"],[6,6,2,1,"#ffd83d"],[1,5,2,1,"#f0a832"],[3,7,2,1,"#ffd83d"]];
+ICONS.meteorGray=[[10,8,5,5,"#6a6a78"],[11,7,3,1,"#8a8a99"],[10,13,3,1,"#55555f"],[12,9,2,2,"#a8a8b8"],[2,2,3,1,"#8a8a99"],[4,4,3,1,"#6a6a78"],[6,6,2,1,"#8a8a99"],[1,5,2,1,"#6a6a78"],[3,7,2,1,"#8a8a99"]];
+var MUSEUM_MILESTONES=[10,25,50];
+var MUSEUM_VIEW_RE=/电影|电视剧|剧集|美剧|英剧|日剧|韩剧|纪录片|动画|动漫|番剧|影视|观影|综艺/;
+var MUSEUM_READ_RE=/书|阅读|读书|读完|小说|文学|传记|散文|诗集/;
+function museumTopicMedia(tp){
+  var text=String((tp&&tp.title)||"")+" "+String((tp&&tp.notes)||"");
+  if(MUSEUM_VIEW_RE.test(text))return "viewing";
+  if(MUSEUM_READ_RE.test(text))return "reading";
+  return null;
+}
+function museumTopicDone(tp){return !!(tp&&(tp.archived===true||Number(tp.progressPct)>=100));}
+function museumTopicDateIn(st,tp){
+  var best="";
+  (st.studyLogs||[]).forEach(function(l){if(l&&l.topicId===tp.id&&l.date&&String(l.date)>best)best=String(l.date);});
+  if(best)return best;
+  return tp.uAt?dateStrOfTs(tp.uAt):"";
+}
+/* 陨石对接口径（供第 11 项随机事件对接）：以下任一成立即视为已获得陨石碎片：
+   S.meteorOwned===true；S.randEvent 为对象且 randEvent.meteorOwned===true；
+   S.randEvent.history / S.randEvent.events / S.randEvent 数组 / S.randEvents 数组中存在 type、kind、event、id 任一为 "meteor" 的条目，
+   且 picked、collected、owned、done 任一为 true（字符串条目 "meteor" 亦算已获得）；
+   S.meteors 为非空数组。展品日期取命中条目的 date，无则为空。 */
+function museumMeteorInfoIn(st){
+  st=st||{};
+  if(st.meteorOwned===true)return{owned:true,date:""};
+  var pools=[];
+  if(st.randEvent&&typeof st.randEvent==="object"&&!Array.isArray(st.randEvent)){
+    if(st.randEvent.meteorOwned===true)return{owned:true,date:st.randEvent.meteorDate||""};
+    if(Array.isArray(st.randEvent.history))pools.push(st.randEvent.history);
+    if(Array.isArray(st.randEvent.events))pools.push(st.randEvent.events);
+  }
+  if(Array.isArray(st.randEvent))pools.push(st.randEvent);
+  if(Array.isArray(st.randEvents))pools.push(st.randEvents);
+  for(var i=0;i<pools.length;i++){
+    var arr=pools[i];
+    for(var j=0;j<arr.length;j++){
+      var e=arr[j];
+      if(e==="meteor")return{owned:true,date:""};
+      if(e&&typeof e==="object"&&(e.type==="meteor"||e.kind==="meteor"||e.event==="meteor"||e.id==="meteor")&&(e.picked===true||e.collected===true||e.owned===true||e.done===true))return{owned:true,date:e.date||""};
+    }
+  }
+  if(Array.isArray(st.meteors)&&st.meteors.length>0)return{owned:true,date:(st.meteors[0]&&st.meteors[0].date)||""};
+  return{owned:false,date:""};
+}
+function museumMeteorOwnedIn(st){return museumMeteorInfoIn(st).owned;}
+function museumExhibitsIn(st){
+  st=st||{};
+  var logs=st.studyLogs||[],topics=st.studyTopics||[];
+  var topicById={};topics.forEach(function(tp){if(tp)topicById[tp.id]=tp;});
+  function logName(l){
+    var n=String(l.linkTitle||l.content||"").trim();
+    if(n)return n;
+    var tp=topicById[l.topicId];
+    return tp?String(tp.title||"").trim():"";
+  }
+  var seen={},out={result:[],discovery:[],reading:[],viewing:[],special:[],total:0};
+  function push(cat,key,name,date,icon){
+    if(seen[key])return;
+    seen[key]=1;
+    out[cat].push({key:key,name:name||"未命名展品",date:date||"",icon:icon});
+  }
+  logs.forEach(function(l){if(l&&studyKindOf(l)==="result")push("result","log:"+l.id,logName(l),l.date,"medal");});
+  logs.forEach(function(l){if(l&&l.starred===true)push("discovery","log:"+l.id,logName(l),l.date,"star");});
+  topics.forEach(function(tp){
+    if(!tp||!museumTopicDone(tp))return;
+    if(museumTopicMedia(tp)==="reading")push("reading","topic:"+tp.id,String(tp.title||"").trim(),museumTopicDateIn(st,tp),"book");
+  });
+  topics.forEach(function(tp){
+    if(!tp||!museumTopicDone(tp))return;
+    if(museumTopicMedia(tp)==="viewing")push("viewing","topic:"+tp.id,String(tp.title||"").trim(),museumTopicDateIn(st,tp),"tv");
+  });
+  var mi=museumMeteorInfoIn(st);
+  if(mi.owned)push("special","meteor","陨石碎片",mi.date,"meteor");
+  out.total=out.result.length+out.discovery.length+out.reading.length+out.viewing.length+out.special.length;
+  return out;
+}
+function museumExhibits(){return museumExhibitsIn(S);}
+function museumTotalIn(st){return museumExhibitsIn(st).total;}
+/* 里程碑检测：挂在 render() 的统一状态检查点，与 checkSkillGrants 同族；只发不追回 */
+function checkMuseumGrants(){
+  var total=museumTotalIn(S);var banners=[];var today=todayStr();
+  MUSEUM_MILESTONES.forEach(function(ms){
+    if(total>=ms&&!ledgerHasIdem("museum:"+ms)){
+      addLedger("points",10,"博物馆馆藏达到 "+ms+" 件",today,"museum:"+ms);
+      banners.push({icon:"museum",title:"博物馆馆藏 "+ms+" 件",sub:"+10 积分已到账",small:false});
+    }
+  });
+  if(banners.length)save();
+  return banners;
+}
+function museumCardHtml(ex){
+  return '<div class="paper-panel" style="padding:10px;text-align:center;min-width:0"><div style="display:flex;justify-content:center">'+pixIcon(ex.icon,36)+'</div><div class="small" style="font-weight:600;margin-top:4px;word-break:break-word">'+esc(ex.name)+'</div><div class="xs dim" style="margin-top:2px">'+(ex.date?esc(ex.date):"日期未记")+"</div></div>";
+}
+function museumShelfHtml(title,icon,items){
+  var body=items.length>0?'<div class="grid-cards3">'+items.map(museumCardHtml).join("")+"</div>":'<p class="small dim" style="margin:0">暂无展品。</p>';
+  return '<div style="margin-top:12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+pixIcon(icon,17)+'<b class="small">'+title+'</b><span class="xs dim">'+items.length+" 件</span></div>"+body+"</div>";
+}
+function museumPanelHtml(){
+  var ex=museumExhibits();var total=ex.total;
+  var inner='<p class="small dim" style="margin:0 0 4px">展品来自书房记录：留成果、标星的发现、读完的书、看完的影视。馆藏满 10 / 25 / 50 件时各 +10 积分。</p>';
+  if(total===0)inner+='<p class="small" style="margin:0 0 4px">还没有展品。书房里留成果、标星的发现会摆到这里。</p>';
+  inner+=museumShelfHtml("成果","medal",ex.result);
+  inner+=museumShelfHtml("发现","star",ex.discovery);
+  inner+=museumShelfHtml("阅读","book",ex.reading);
+  inner+=museumShelfHtml("观影","tv",ex.viewing);
+  var specialBody=ex.special.length>0
+    ?'<div class="grid-cards3">'+ex.special.map(museumCardHtml).join("")+"</div>"
+    :'<div class="grid-cards3"><div class="paper-panel" style="padding:10px;text-align:center;min-width:0;filter:grayscale(.9);opacity:.55"><div style="display:flex;justify-content:center">'+pixIcon("meteorGray",36)+'</div><div class="small" style="font-weight:600;margin-top:4px">陨石碎片</div><div class="xs dim" style="margin-top:2px">未获得</div></div></div>';
+  inner+='<div style="margin-top:12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+pixIcon("meteor",17)+'<b class="small">特别</b><span class="xs dim">'+ex.special.length+" / 1</span></div>"+specialBody+"</div>";
+  return panel("博物馆 · 馆藏 "+total+" 件","museum",inner);
+}
+
 /* ---------- 10.5 技能等级 ---------- */
 /* 五维技能全部由真实记录派生（不做事件累积计数器）：基线日之前的记录一律计 0；
    每维先按日汇总原始 XP、截断到每日封顶，再跨日汇总为总 XP。
@@ -5261,7 +5382,7 @@ function rewardConfirmModal(r){
 /* ============ 成就图鉴 ============ */
 function achievementsPage(){
   var unlockedN=ACHIEVEMENTS.filter(function(a){return S.unlocked[a.key];}).length;
-  return '<div class="stack">'+bundlePanelHtml()+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
+  return '<div class="stack">'+bundlePanelHtml()+museumPanelHtml()+panel("成就图鉴 · 已解锁 "+unlockedN+"/"+ACHIEVEMENTS.length,"trophy",
     '<div class="grid-cards3">'+ACHIEVEMENTS.map(function(a){
       var un=!!S.unlocked[a.key];
       return '<article class="paper-panel" style="padding:12px;text-align:center'+(un?"":";filter:grayscale(.9);opacity:.6")+'"><div style="display:flex;justify-content:center">'+pixIcon(un?a.icon:"lock",38)+'</div><h3 class="font-pixel" style="margin:4px 0 0">'+esc(a.name)+'</h3><p class="xs" style="margin:4px 0 0">'+esc(a.desc)+'</p><p class="font-num" style="font-size:10px;margin:4px 0 0">+'+a.points+" 分</p>"
@@ -5652,6 +5773,8 @@ function render(){
     if(seasonRewardBanners.length){save();pushBanners(seasonRewardBanners);}
     var skillBanners=checkSkillGrants();
     if(skillBanners.length)pushBanners(skillBanners);
+    var museumBanners=checkMuseumGrants();
+    if(museumBanners.length)pushBanners(museumBanners);
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
