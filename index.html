@@ -1258,7 +1258,7 @@ function defaultState(){
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
     unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},forage:{date:"",itemId:null,page:null,corner:null,found:[],uAt:0},forageDex:{},randEvent:{date:"",type:"none",payload:null,consumed:false},meteorOwned:false,
-    mail:[],quests:{week:"",pool:[],active:[],done:[]},catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
+    mail:[],quests:{week:"",pool:[],active:[],done:[]},grandpa:{years:{}},feast:{year:0,friendId:null,gifted:false},exhibit:{season:"",totalStars:0},catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -1364,6 +1364,9 @@ function normalizeState(){
     return true;
   });
   S.quests=questsClean(S.quests);
+  S.grandpa=grandpaClean(S.grandpa);
+  S.feast=feastClean(S.feast);
+  S.exhibit=exhibitClean(S.exhibit);
   if(typeof S._profileUAt!=="number")S._profileUAt=0;
 }
 var S;
@@ -1582,6 +1585,9 @@ function mergeStates(L,R){
   out.mail=mergeMailLists(L.mail,R.mail);
   /* 公告板委托：周键不同取较新周键整份；同周 active/done 取并集、pool 以种子正准池为准（详见 mergeQuests） */
   out.quests=mergeQuests(L.quests,R.quests);
+  out.grandpa=mergeGrandpaStates(L.grandpa,R.grandpa);
+  out.feast=mergeFeastStates(L.feast,R.feast);
+  out.exhibit=mergeExhibitStates(L.exhibit,R.exhibit);
   /* 朋友互动事件：记录本体按 uAt 取胜者会丢掉另一台的事件，这里按 (date+type+bday) 复合键并集去重，两边独有都保留；好感全部派生、不存计数器 */
   out.friends.forEach(function(fr){
     var lf=null,rf=null;
@@ -3876,6 +3882,275 @@ function skillsPanelHtml(){
     +rows+"</div>";
 }
 
+/* ---------- 13. 爷爷的评价 + 节日活动（冬星秘密送礼 / 秋季展览会） ---------- */
+/* 爷爷的评价：每年 1 月起（窗口 1 月 1–7 日为最早可评时间，窗口后首次打开补评），对上一自然年度做一次评价。
+   触发口径：任何「尚未评价、且有活动记录、且当前日期已进入下一年」的年份，在统一状态检查点 checkGrandpa 里补评生成，
+   不限于 1 月 7 日内；全年零记录的年份不生成、不发信、神龛不出该年。
+   五项数据（按日期落在该年度内派生；技能总等级与星之果实点亮数为评价生成时点的值）：
+   全清天数（账本「今日全清奖励」按天计，与 checkDayClear/checkClearStreak 同一事实源）/ 办结工作数（doneDate 在该年）/
+   运动次数（该年 workouts 条数）/ 当前技能总等级（skillTotalLevel）/ 星之果实已点亮数（stardropMet 逐颗计）。
+   分档公式（单调）：五项各按阈值计 0–4 分——全清天数 [1,10,30,60]、办结工作 [5,20,50,100]、运动 [4,12,24,48]、
+   技能总等级 [10,20,30,40]、星之果实 [1,2,4,6]；总分 0–20 映射蜡烛：0–4 分 1 根、5–9 分 2 根、10–14 分 3 根、15–20 分 4 根。
+   有活动记录时公式本身最低即 1 根（保底）；发分 = 蜡烛数 × 10（addLedger 幂等键 grandpa:<年份>）；
+   评价信走 deliverMail（key=mail:grandpa:<年份>，寄信人「爷爷」，正文只列五项数据事实 + 蜡烛数）。
+   状态 S.grandpa={years:{"2025":{candles,score,clearDays,workDone,workouts,skillTotal,stardrops}}}，
+   合并按年份并集、同年取蜡烛数大者整份（同数据同公式两边应恒等，取大防边界抖动）。 */
+ICONS.candleLit=[[7,0,2,2,"#ffd83d"],[6,2,4,3,"#f0a832"],[7,3,2,1,"#fff3b0"],[7,5,2,1,"#6b3f1d"],[5,6,6,8,"#f5eeda"],[5,6,6,1,"#e8dcc0"],[6,14,4,1,"#d8c491"],[4,15,8,1,"#8a5a2b"]];
+ICONS.candleDark=[[7,4,2,2,"#5a554c"],[5,6,6,8,"#9a958a"],[5,6,6,1,"#7d786d"],[6,14,4,1,"#6e695f"],[4,15,8,1,"#6b6257"]];
+ICONS.starEmpty=[[7,1,2,3,"#cbbfa5"],[5,4,6,2,"#cbbfa5"],[2,6,12,2,"#cbbfa5"],[3,8,4,2,"#cbbfa5"],[9,8,4,2,"#cbbfa5"],[4,10,3,3,"#cbbfa5"],[9,10,3,3,"#cbbfa5"],[7,5,2,2,"#efe6cc"],[6,7,4,1,"#efe6cc"]];
+var GRANDPA_THRESH={clear:[1,10,30,60],work:[5,20,50,100],workout:[4,12,24,48],skill:[10,20,30,40],stars:[1,2,4,6]};
+function threshScore(v,th){var s=0;for(var i=0;i<th.length;i++)if(v>=th[i])s++;return s;}
+function grandpaClean(v){
+  var out={years:{}};
+  if(v&&typeof v==="object"&&!Array.isArray(v)&&v.years&&typeof v.years==="object"&&!Array.isArray(v.years)){
+    Object.keys(v.years).forEach(function(ys){
+      if(!/^\d{4}$/.test(ys))return;var g=v.years[ys];if(!g||typeof g!=="object"||Array.isArray(g))return;
+      function nn(x){var n=Number(x);return (isFinite(n)&&n>0)?Math.floor(n):0;}
+      var c=Math.floor(Number(g.candles)||0);if(c<1)c=1;if(c>4)c=4;
+      out.years[ys]={candles:c,score:nn(g.score),clearDays:nn(g.clearDays),workDone:nn(g.workDone),workouts:nn(g.workouts),skillTotal:nn(g.skillTotal),stardrops:nn(g.stardrops)};
+    });
+  }
+  return out;
+}
+function mergeGrandpaStates(a,b){
+  var x=grandpaClean(a),y=grandpaClean(b),out={years:{}};
+  var keys={};Object.keys(x.years).forEach(function(k){keys[k]=1;});Object.keys(y.years).forEach(function(k){keys[k]=1;});
+  Object.keys(keys).forEach(function(ys){
+    var p=x.years[ys],q=y.years[ys];
+    if(p&&q)out.years[ys]=(q.candles>p.candles)?q:p;else out.years[ys]=p||q;
+  });
+  return out;
+}
+function grandpaYearStatsIn(st,year,skillTotal,starCount){
+  var ys=String(year);
+  function inY(d){return typeof d==="string"&&d.slice(0,4)===ys;}
+  var clearSet={};
+  (st.ledger||[]).forEach(function(l){if(l&&l.reason==="今日全清奖励"&&inY(l.date))clearSet[l.date]=1;});
+  var clearDays=Object.keys(clearSet).length;
+  var workDone=(st.workItems||[]).filter(function(w){return w&&w.done&&inY(w.doneDate);}).length;
+  var workouts=(st.workouts||[]).filter(function(w){return w&&inY(w.date);}).length;
+  var sub={clear:threshScore(clearDays,GRANDPA_THRESH.clear),work:threshScore(workDone,GRANDPA_THRESH.work),workout:threshScore(workouts,GRANDPA_THRESH.workout),skill:threshScore(skillTotal,GRANDPA_THRESH.skill),stars:threshScore(starCount,GRANDPA_THRESH.stars)};
+  var total=sub.clear+sub.work+sub.workout+sub.skill+sub.stars;
+  return{clearDays:clearDays,workDone:workDone,workouts:workouts,skillTotal:skillTotal,stardrops:starCount,sub:sub,totalScore:total};
+}
+function grandpaCandlesFor(stats){
+  var t=(stats&&typeof stats.totalScore==="number")?stats.totalScore:0;
+  if(t>=15)return 4;if(t>=10)return 3;if(t>=5)return 2;return 1;
+}
+function grandpaHasActivityIn(st,year){
+  var ys=String(year);
+  function inY(d){return typeof d==="string"&&d.slice(0,4)===ys;}
+  function anyIn(arr,fn){return (arr||[]).some(function(r){return r&&fn(r);});}
+  return anyIn(st.todos,function(r){return inY(r.date);})
+    ||anyIn(st.workouts,function(r){return inY(r.date);})
+    ||anyIn(st.studyLogs,function(r){return inY(r.date);})
+    ||anyIn(st.financeTx,function(r){return inY(r.date);})
+    ||anyIn(st.reviews,function(r){return inY(r.date);})
+    ||anyIn(st.habitLogs,function(r){return inY(r.date);})
+    ||anyIn(st.moods,function(r){return inY(r.date);})
+    ||anyIn(st.ledger,function(r){return inY(r.date)&&!(typeof r.idem==="string"&&r.idem.indexOf("grandpa:")===0);})
+    ||anyIn(st.workItems,function(r){return inY(r.doneDate);});
+}
+function grandpaActivityYearsIn(st){
+  var seen={};
+  function take(d){if(typeof d==="string"&&/^\d{4}-/.test(d))seen[d.slice(0,4)]=1;}
+  [st.todos,st.workouts,st.studyLogs,st.financeTx,st.reviews,st.habitLogs,st.moods].forEach(function(arr){(arr||[]).forEach(function(r){if(r)take(r.date);});});
+  (st.ledger||[]).forEach(function(r){if(r&&!(typeof r.idem==="string"&&r.idem.indexOf("grandpa:")===0))take(r.date);});
+  (st.workItems||[]).forEach(function(w){if(w)take(w.doneDate);});
+  return Object.keys(seen).map(Number).sort(function(a,b){return a-b;});
+}
+function stardropLitCount(){return STARDROPS.filter(function(d){return stardropMet(d.key);}).length;}
+function checkGrandpa(today){
+  var banners=[];
+  if(!S.grandpa||typeof S.grandpa!=="object")S.grandpa={years:{}};
+  if(!S.grandpa.years||typeof S.grandpa.years!=="object")S.grandpa.years={};
+  var curYear=Number(today.slice(0,4));
+  grandpaActivityYearsIn(S).forEach(function(y){
+    if(y>=curYear)return;
+    if(S.grandpa.years[String(y)])return;
+    if(today<((y+1)+"-01-01"))return;
+    if(!grandpaHasActivityIn(S,y))return;
+    var stats=grandpaYearStatsIn(S,y,skillTotalLevel(),stardropLitCount());
+    var candles=grandpaCandlesFor(stats);
+    S.grandpa.years[String(y)]={candles:candles,score:stats.totalScore,clearDays:stats.clearDays,workDone:stats.workDone,workouts:stats.workouts,skillTotal:stats.skillTotal,stardrops:stats.stardrops};
+    addLedger("points",candles*10,"爷爷的评价："+y+" 年",today,"grandpa:"+y);
+    var body=y+" 年记录：今日全清 "+stats.clearDays+" 天、办结工作 "+stats.workDone+" 件、运动 "+stats.workouts+" 次、当前技能总等级 "+stats.skillTotal+"、星之果实已点亮 "+stats.stardrops+" 颗。神龛点亮 "+candles+" 根蜡烛，+"+(candles*10)+" 积分已到账。";
+    deliverMail({key:"mail:grandpa:"+y,date:today,from:"爷爷",title:"爷爷的评价 · "+y+" 年",body:body});
+    banners.push({icon:"candleLit",title:"爷爷的评价 · "+y+" 年",sub:"点亮 "+candles+" 根蜡烛 · +"+(candles*10)+" 积分已到账，信在邮箱里",small:false});
+  });
+  if(banners.length)save();
+  return banners;
+}
+function grandpaShrineHtml(){
+  var g=grandpaClean(S.grandpa);
+  var years=Object.keys(g.years).sort();
+  var inner;
+  if(!years.length){
+    inner='<p class="small dim" style="margin:0">还没有年度评价。每年 1 月起，上一年的记录会生成评价，蜡烛点亮在这里。</p>';
+  }else{
+    inner=years.map(function(ys){
+      var rec=g.years[ys];var candles="";
+      for(var i=0;i<4;i++)candles+=pixIcon(i<rec.candles?"candleLit":"candleDark",26);
+      return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap;max-width:100%">'
+        +'<span class="font-pixel" style="white-space:nowrap">'+ys+' 年</span>'
+        +'<span style="display:inline-flex;gap:4px">'+candles+'</span>'
+        +'<span class="small dim">'+rec.candles+' / 4 根 · 全清 '+rec.clearDays+' 天 · 办结 '+rec.workDone+' 件 · 运动 '+rec.workouts+' 次</span></div>';
+    }).join("");
+  }
+  return '<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 4px;display:flex;align-items:center;gap:8px">'+pixIcon("candleLit",18)+' 神龛 · 爷爷的评价</h3>'+inner+'</div>';
+}
+/* 冬星盛宴秘密送礼：每年 12 月 20–25 日，按年份种子 newsHash("feast|"+年份) 从朋友档案（按 id 升序稳定排序）抽一位秘密朋友；
+   同年同名单必同人、跨设备一致。点「已送出礼物」：复用 recordFriendEvent 记一条 gift 事件（日期为点击日，生日判定走既有逻辑）
+   + 20 积分（幂等键 feast:<年份>）；12 月 26 日起不在窗口、牌自动撤下。状态 S.feast={year,friendId,gifted}，
+   合并：年份不同取较新年份整份；同年 gifted 取或，friendId 优先取已送出那份的。 */
+function feastClean(v){
+  if(!v||typeof v!=="object"||Array.isArray(v))return{year:0,friendId:null,gifted:false};
+  var y=Math.floor(Number(v.year)||0);if(y<0)y=0;
+  var fid=(v.friendId===null||v.friendId===undefined||v.friendId==="")?null:v.friendId;
+  return{year:y,friendId:fid,gifted:!!v.gifted};
+}
+function mergeFeastStates(a,b){
+  var x=feastClean(a),y=feastClean(b);
+  if(x.year!==y.year)return x.year>y.year?x:y;
+  if(!x.year)return{year:0,friendId:null,gifted:false};
+  var fid=x.friendId;
+  if(x.gifted&&x.friendId!=null)fid=x.friendId;else if(y.gifted&&y.friendId!=null)fid=y.friendId;else if(fid==null)fid=y.friendId;
+  return{year:x.year,friendId:fid,gifted:!!(x.gifted||y.gifted)};
+}
+function feastInWindow(today){var md=today.slice(5);return md>="12-20"&&md<="12-25";}
+function feastPickFor(year){
+  var friends=(Array.isArray(S.friends)?S.friends:[]).filter(function(f){return f&&f.id!=null;});
+  if(!friends.length)return null;
+  var sorted=friends.slice().sort(function(a,b){var x=String(a.id),y=String(b.id);return x<y?-1:(x>y?1:0);});
+  return sorted[Math.abs(newsHash("feast|"+year))%sorted.length];
+}
+function feastEnsure(today){
+  if(!feastInWindow(today))return false;
+  var year=Number(today.slice(0,4));
+  var st=feastClean(S.feast);
+  if(st.year===year&&st.gifted)return false;
+  if(st.year===year&&st.friendId!=null&&findById(S.friends,st.friendId))return false;
+  var pick=feastPickFor(year);if(!pick)return false;
+  S.feast={year:year,friendId:pick.id,gifted:false};
+  return true;
+}
+function feastCardHtml(today){
+  if(!feastInWindow(today))return "";
+  var st=feastClean(S.feast);
+  if(st.year!==Number(today.slice(0,4))||st.friendId==null)return "";
+  var f=findById(S.friends,st.friendId);if(!f)return "";
+  if(st.gifted){
+    return panel("冬星盛宴 · 秘密送礼","gift",'<p class="small" style="margin:0">'+esc(f.name)+' 是今年冬星盛宴的秘密朋友，礼物已送出。+20 积分已到账。</p>');
+  }
+  return panel("冬星盛宴 · 秘密送礼","gift",
+    '<p class="small" style="margin:0 0 8px">'+esc(f.name)+' 是今年冬星盛宴的秘密朋友。送出后记一条送礼互动，+20 积分。</p>'
+    +'<button type="button" class="pix-btn pix-btn-green" data-act="feast-gift" aria-label="已送出礼物给 '+esc(f.name)+'">已送出礼物</button>');
+}
+function feastGiftAction(){
+  var today=todayStr();
+  if(!feastInWindow(today))return;
+  var st=feastClean(S.feast);
+  if(st.year!==Number(today.slice(0,4))||st.friendId==null||st.gifted)return;
+  if(!findById(S.friends,st.friendId))return;
+  mutate(function(){
+    recordFriendEvent(st.friendId,"gift",false);
+    S.feast={year:st.year,friendId:st.friendId,gifted:true};
+    addLedger("points",20,"冬星盛宴秘密送礼",today,"feast:"+st.year);
+    return [];
+  });
+}
+/* 秋季展览会：每年 11 月 24–30 日，今日页出牌，点开弹窗按当季（秋季 9–11 月，季键同收集包 seasonKeyOf 口径）评定五项 1–5 星。
+   阈值（星数 = 1 + 达到的阈值个数，单调）：运动次数 [3,6,10,14]、办结工作 [4,8,14,20]、记账天数 [5,12,20,30]、
+   全清天数 [2,5,10,18]、技能经验总和 [100,300,600,1000]（五维经验派生总和，累计口径同技能系统，基线 2026-10-23 不改）。
+   发分 = 总星数 × 2，弹窗首次打开评定时发（幂等键 exhibit:<季键>），重复打开不重发。
+   状态 S.exhibit={season,totalStars}，合并：季键不同取较新季键整份，同季 totalStars 取大。 */
+var EXHIBIT_THRESH={workout:[3,6,10,14],work:[4,8,14,20],finDays:[5,12,20,30],clear:[2,5,10,18],skillXp:[100,300,600,1000]};
+var EXHIBIT_ITEMS=[
+  {key:"workout",label:"运动次数",unit:"次"},
+  {key:"work",label:"办结工作",unit:"件"},
+  {key:"finDays",label:"记账天数",unit:"天"},
+  {key:"clear",label:"全清天数",unit:"天"},
+  {key:"skillXp",label:"技能经验总和",unit:" XP"}
+];
+function exhibitClean(v){
+  if(!v||typeof v!=="object"||Array.isArray(v))return{season:"",totalStars:0};
+  var s=(typeof v.season==="string"&&/^\d{4}-autumn$/.test(v.season))?v.season:"";
+  var n=Number(v.totalStars);if(!isFinite(n)||n<0)n=0;
+  return{season:s,totalStars:Math.min(25,Math.floor(n))};
+}
+function mergeExhibitStates(a,b){
+  var x=exhibitClean(a),y=exhibitClean(b);
+  if(x.season!==y.season)return x.season>y.season?x:y;
+  return{season:x.season,totalStars:Math.max(x.totalStars,y.totalStars)};
+}
+function exhibitInWindow(today){var md=today.slice(5);return md>="11-24"&&md<="11-30";}
+function exhibitSeasonKeyOf(today){return today.slice(0,4)+"-autumn";}
+function exhibitCountsIn(st,key,skillXpTotal){
+  var r=seasonRangeOf(key);
+  function inR(d){return !!d&&d>=r.start&&d<=r.end;}
+  var finSet={};(st.financeTx||[]).forEach(function(t){if(t&&inR(t.date))finSet[t.date]=1;});
+  var clrSet={};(st.ledger||[]).forEach(function(l){if(l&&l.reason==="今日全清奖励"&&inR(l.date))clrSet[l.date]=1;});
+  return{
+    workout:(st.workouts||[]).filter(function(w){return w&&inR(w.date);}).length,
+    work:(st.workItems||[]).filter(function(w){return w&&w.done&&inR(w.doneDate);}).length,
+    finDays:Object.keys(finSet).length,
+    clear:Object.keys(clrSet).length,
+    skillXp:skillXpTotal||0
+  };
+}
+function exhibitStarsFor(counts){
+  var stars={},total=0;
+  EXHIBIT_ITEMS.forEach(function(it){stars[it.key]=1+threshScore(counts[it.key]||0,EXHIBIT_THRESH[it.key]);total+=stars[it.key];});
+  return{stars:stars,total:total};
+}
+function exhibitEval(key,skillXpTotal){
+  var counts=exhibitCountsIn(S,key,skillXpTotal);
+  var s=exhibitStarsFor(counts);
+  return{counts:counts,stars:s.stars,totalStars:s.total};
+}
+function exhibitSkillXpTotal(){
+  var sum=0;SKILL_DEFS.forEach(function(def){sum+=skillXp(def.key);});
+  return sum;
+}
+function exhibitCardHtml(today){
+  if(!exhibitInWindow(today))return "";
+  var key=exhibitSeasonKeyOf(today);
+  var ex=exhibitClean(S.exhibit);
+  var claimed=ex.season===key;
+  return panel("秋季展览会","star",
+    '<p class="small" style="margin:0 0 8px">11 月 24 日至 30 日。按今年秋季（9 月至 11 月）的记录评定五项星级，总星数 × 2 发积分，评定一次。</p>'
+    +(claimed?'<p class="small" style="margin:0 0 8px">已评定：'+ex.totalStars+' 星，+'+(ex.totalStars*2)+' 积分已到账。</p>':"")
+    +'<button type="button" class="pix-btn" data-act="exhibit-open" aria-label="查看秋季展览会评定">查看评定</button>');
+}
+function exhibitModalHtml(key,ev,claimedStars){
+  var rows=EXHIBIT_ITEMS.map(function(it){
+    var n=ev.counts[it.key]||0;var st=ev.stars[it.key]||1;var starRow="";
+    for(var i=0;i<5;i++)starRow+=pixIcon(i<st?"star":"starEmpty",16);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed #d8c491;flex-wrap:wrap;max-width:100%">'
+      +'<span style="flex:1;min-width:110px"><b>'+it.label+'</b> <span class="dim small">'+n+it.unit+'</span></span>'
+      +'<span style="display:inline-flex;gap:2px" role="img" aria-label="'+st+' 星">'+starRow+'</span></div>';
+  }).join("");
+  var foot=(claimedStars!=null)
+    ?'<p class="small" style="margin:10px 0 0">总计 '+claimedStars+' 星，+'+(claimedStars*2)+' 积分已到账。</p>'
+    :'<p class="small" style="margin:10px 0 0">总计 '+ev.totalStars+' 星，+'+(ev.totalStars*2)+' 积分。</p>';
+  return '<p class="small dim" style="margin:0 0 6px">'+seasonLabelOf(key)+'（9 月 1 日至 11 月 30 日）的记录评定。技能经验总和为五维累计经验，自 2026-10-23 起算。</p>'+rows+foot;
+}
+function openExhibitModal(){
+  var today=todayStr();
+  if(!exhibitInWindow(today))return;
+  var key=exhibitSeasonKeyOf(today);
+  var ev=exhibitEval(key,exhibitSkillXpTotal());
+  var ex=exhibitClean(S.exhibit);
+  var claimedStars=(ex.season===key)?ex.totalStars:null;
+  if(claimedStars==null){
+    addLedger("points",ev.totalStars*2,"秋季展览会评定："+seasonLabelOf(key),today,"exhibit:"+key);
+    S.exhibit={season:key,totalStars:ev.totalStars};
+    save();
+    claimedStars=ev.totalStars;
+  }
+  modal("秋季展览会",exhibitModalHtml(key,ev,claimedStars));
+}
+
 /* ---------- 11. 秘密纸条 ---------- */
 /* 内容池：trivia 均与官方中文 wiki《祝尼魔》《秘密纸条》等条目事实一致（2026-10-22 核对）；whisper 为老乡口吻、署名佚名；tips 均为农场真实功能。 */
 var NOTE_POOL=[
@@ -4786,7 +5061,7 @@ function lifePage(){
       return '<div class="small" style="display:flex;align-items:center;gap:8px;padding:2px 0">'+storedIcon(x.f.avatar,20,"farmer")+"<span>和 "+esc(x.f.name)+" 已经 "+x.days+" 天没有互动了</span></div>";
     }).join(""));
   }
-  h+=todayFestivalHtml(today); h+=winterGiftHtml(today);
+  h+=todayFestivalHtml(today); h+=winterGiftHtml(today); h+=feastCardHtml(today); h+=exhibitCardHtml(today);
   h+='<div class="row wrap" role="group" aria-label="今日小牌">'
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">待办 '+done+"/"+my.length+"</span>"
     +'<span class="wood-sign font-pixel" style="padding:8px 12px;font-size:13px">工作到期 '+dueWork.length+"</span>"
@@ -6456,7 +6731,7 @@ function profilePage(){
     +'<div style="text-align:center"><div style="display:flex;justify-content:center">'+personSprite("sebastian",48)+'</div><div class="xs" style="font-weight:600;margin-top:4px">塞巴斯蒂安</div><div class="xs dim">冬10日生 · 住木匠店地下室<br>最爱生鱼片 / 南瓜汤 / 泪晶</div></div>'
     +'<div style="text-align:center"><div style="display:flex;justify-content:center">'+storedIcon(p.petEmoji,48,"cat")+'</div><div class="xs" style="font-weight:600;margin-top:4px">宠物 · '+esc(p.petName)+'</div><div class="xs dim">家里的大王</div></div>'
     +"</div></div></div></div></div>"
-    +skillsPanelHtml()
+    +skillsPanelHtml()+grandpaShrineHtml()
     +'<div class="wood-panel panel"><h3 class="font-pixel" style="margin:0 0 8px">云端账号</h3>'
     +(session
       ?'<p class="small" style="margin:0 0 8px">当前登录：'+esc(session.email||"")+'</p><div class="row wrap" style="gap:8px;align-items:center"><span class="pix-tag sync-badge" style="'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span><button type="button" class="pix-btn pix-btn-ghost" data-act="auth-logout" aria-label="退出登录">退出登录</button></div>'
@@ -6765,6 +7040,9 @@ function render(){
     var greenhouseBanners=checkGreenhouseGrants();
     if(greenhouseBanners.length)pushBanners(greenhouseBanners);
     checkMail();
+    var grandpaBanners=checkGrandpa(todayStr());
+    if(grandpaBanners.length)pushBanners(grandpaBanners);
+    if(feastEnsure(todayStr()))save();
     var questBanners=checkQuests();
     if(questBanners.length)pushBanners(questBanners);
   }
@@ -6846,6 +7124,8 @@ document.addEventListener("click",function(e){
       if(markAllMailRead()){save();render();}
       openMailModal();break;}
     case "quest-accept":questAccept(el.dataset.key);break;
+    case "feast-gift":feastGiftAction();break;
+    case "exhibit-open":openExhibitModal();break;
     case "quest-abandon":questAbandon(el.dataset.key);break;
     case "note-open":openSecretNote();break;
     case "forage-collect":collectForage();break;
