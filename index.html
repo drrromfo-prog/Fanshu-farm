@@ -531,6 +531,132 @@ function junimoPetWave(){
   var el=document.getElementById("junimo-pet");if(!el)return;
   el.classList.remove("junimo-wave");void el.offsetWidth;el.classList.add("junimo-wave");
 }
+/* ============ 汤圆入住（今日页宠物角·猫窝） ============
+   汤圆：英短三花、母（用户宠物健康档案）。像素猫按三花配色自绘：白底 + 橘斑 + 深棕斑。
+   摸猫每天一次，只记日期 S.catPet.dates（合并并集），陪伴心由日期数派生；不发金币/积分、不写账本。
+   养护日期 S.catCare 默认空（健康档案 care_items 为空、无可预填日期），用户在宠物角自行填写。 */
+function catSvg(size){
+  size=size||76;var h=Math.round(size*19/24);
+  var W="#fffaf0",CR="#f0e2c4",OR="#e8853a",ORD="#c2641f",BR="#5d4030",INK="#241408",PK="#e58bb5",NB="#a5713d",NBD="#6b3f1d",CU="#d98a68",GR="#cbbfa5";
+  var rects=[];function R(x,y,w,hh,f){rects.push([x,y,w,hh,f]);}
+  /* 猫窝（先画，猫坐在窝沿上） */
+  R(4,15,16,1,CU);
+  R(2,16,20,2,NB);R(2,18,20,1,NBD);
+  R(5,16,1,2,NBD);R(10,16,1,2,NBD);R(15,16,1,2,NBD);R(19,16,1,2,NBD);
+  /* 尾巴：右侧卷出，橘色带深色尾尖 */
+  R(18,11,3,1,OR);R(20,12,2,2,OR);R(19,13,3,1,OR);R(21,13,1,1,BR);
+  /* 身体（坐姿）：白底，右侧橘斑、左侧小块深棕斑 */
+  R(6,10,12,1,W);R(5,11,14,3,W);
+  R(15,11,4,3,OR);R(16,10,2,1,OR);
+  R(5,11,3,2,BR);
+  /* 前爪搭在窝沿 */
+  R(8,14,3,1,W);R(13,14,3,1,W);R(9,14,1,1,CR);R(14,14,1,1,CR);
+  /* 耳朵：左深棕、右橘，粉内耳 */
+  R(5,0,2,1,BR);R(5,1,4,1,BR);R(6,1,1,1,PK);
+  R(17,0,2,1,OR);R(15,1,4,1,OR);R(17,1,1,1,PK);
+  /* 头：白底，左上深棕斑、右上橘斑 */
+  R(5,2,14,1,W);R(4,3,16,6,W);R(5,9,14,1,W);
+  R(4,3,5,1,BR);R(4,4,4,2,BR);R(5,2,4,1,BR);
+  R(15,2,4,1,OR);R(15,3,5,1,OR);R(16,4,4,2,OR);
+  /* 眼（深色，压在斑块上也看得清）+ 鼻 + 胡须 */
+  R(7,6,1,2,INK);R(16,6,1,2,INK);
+  R(11,8,2,1,PK);
+  R(1,7,3,1,GR);R(1,9,3,1,GR);R(20,7,3,1,GR);R(20,9,3,1,GR);
+  return rectsSvg(rects,"0 0 24 19",size,h);
+}
+function catPettedOn(dateStr){
+  return !!(S.catPet&&Array.isArray(S.catPet.dates)&&S.catPet.dates.indexOf(dateStr)>=0);
+}
+var catFxOn=false;
+function petCat(){
+  var today=todayStr();
+  if(catPettedOn(today))return;
+  mutate(function(){
+    if(!S.catPet||typeof S.catPet!=="object")S.catPet={dates:[]};
+    if(!Array.isArray(S.catPet.dates))S.catPet.dates=[];
+    if(S.catPet.dates.indexOf(today)<0){S.catPet.dates.push(today);S.catPet.dates.sort();}
+    return [];
+  });
+  catFxOn=true;render();
+  setTimeout(function(){if(catFxOn){catFxOn=false;render();}},720);
+}
+/* 养护提醒：距到期 <=3 天（含当天与已过期）才出；返回 [{label,date,days}]，days 为负表示已过期 */
+function catCareDueList(today){
+  var out=[];var cc=S.catCare||{};
+  [["deworm","驱虫"],["vaccine","疫苗"]].forEach(function(pair){
+    var d=cc[pair[0]];if(!d)return;
+    var days=daysUntil(today,d);if(days===null||days>3)return;
+    out.push({label:pair[1],date:d,days:days});
+  });
+  return out;
+}
+function catDateLabel(ds){var p=ds.split("-").map(Number);return p[1]+" 月 "+p[2]+" 日";}
+function catCareLine(x){
+  if(x.days<0)return "汤圆下次"+x.label+"已到期："+catDateLabel(x.date)+"（已过 "+(-x.days)+" 天）";
+  if(x.days===0)return "汤圆下次"+x.label+"："+catDateLabel(x.date)+"，就是今天";
+  return "汤圆下次"+x.label+"："+catDateLabel(x.date)+"，还有 "+x.days+" 天";
+}
+function catNestHtml(){
+  var today=todayStr();
+  var dates=(S.catPet&&Array.isArray(S.catPet.dates))?S.catPet.dates:[];
+  var hearts=dates.length;
+  var petted=catPettedOn(today);
+  var heartsHtml="";for(var i=0;i<Math.min(hearts,10);i++)heartsHtml+=pixIcon("heart",14);
+  var cc=S.catCare||{deworm:"",vaccine:""};
+  var bothEmpty=!cc.deworm&&!cc.vaccine;
+  var due=catCareDueList(today);
+  var h='<div style="margin-top:12px;border-top:2px dashed #b99b62;padding-top:12px">'
+    +'<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">'
+    +'<div style="text-align:center;flex-shrink:0">'
+    +(catFxOn?'<span class="junimo-jump" style="display:inline-block">'+catSvg(76)+"</span>":catSvg(76))
+    +'<div class="xs dim" style="margin-top:2px">猫窝</div></div>'
+    +'<div style="flex:1;min-width:180px">'
+    +'<p class="small" style="margin:0 0 4px"><b>汤圆</b> · 英短三花 · 母</p>'
+    +'<p class="small" style="margin:0 0 4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
+    +(hearts>0?heartsHtml:"")+'<span>陪伴心 '+hearts+"</span></p>"
+    +(petted
+      ?'<button type="button" class="pix-btn" disabled aria-disabled="true" style="opacity:.55;cursor:default">今天摸过啦</button>'
+      :'<button type="button" class="pix-btn pix-btn-green" data-act="cat-pet" aria-label="摸一下汤圆">摸一下汤圆</button>')
+    +"</div></div>";
+  if(bothEmpty){
+    h+='<p class="small" style="margin:10px 0 0">驱虫/疫苗日期还没填 '
+      +'<button type="button" class="xs" style="padding:0 4px;color:#8a6a45;background:none;border:0;cursor:pointer;font-family:inherit;text-decoration:underline" data-act="cat-care-edit" aria-label="填写汤圆的驱虫和疫苗日期">填写日期</button></p>';
+  }else{
+    if(due.length>0){
+      h+='<ul style="list-style:none;margin:10px 0 0;padding:0">'+due.map(function(x){
+        return '<li class="small" style="padding:6px 8px;margin-bottom:6px;background:#fdf3c9;border:2px dashed #b99b62;display:flex;align-items:center;gap:6px">'+pixIcon("pill",16)+"<span>"+esc(catCareLine(x))+"</span></li>";
+      }).join("")+"</ul>";
+    }
+    var facts=[];
+    if(cc.deworm)facts.push("下次驱虫："+catDateLabel(cc.deworm));
+    if(cc.vaccine)facts.push("下次疫苗："+catDateLabel(cc.vaccine));
+    h+='<p class="small dim" style="margin:8px 0 0">'+esc(facts.join(" · "))
+      +' <button type="button" class="xs" style="padding:0 4px;color:#8a6a45;background:none;border:0;cursor:pointer;font-family:inherit;text-decoration:underline" data-act="cat-care-edit" aria-label="编辑汤圆的养护日期">编辑养护日期</button></p>';
+  }
+  h+="</div>";
+  return h;
+}
+function petCornerHtml(){
+  return junimoPetHtml()+catNestHtml();
+}
+function catCareModal(){
+  var cc=S.catCare||{deworm:"",vaccine:""};
+  modal("汤圆养护日期",
+    '<form data-form="cat-care-save">'
+    +'<label class="field"><span>下次驱虫日期</span><input type="date" class="pix-input" name="deworm" aria-label="下次驱虫日期" value="'+esc(cc.deworm||"")+'"></label>'
+    +'<label class="field"><span>下次疫苗日期</span><input type="date" class="pix-input" name="vaccine" aria-label="下次疫苗日期" value="'+esc(cc.vaccine||"")+'"></label>'
+    +'<p class="small dim" style="margin:0 0 12px">留空表示还没排期；距到期 3 天内会在宠物角提醒。</p>'
+    +'<button type="submit" class="pix-btn pix-btn-green" style="width:100%" aria-label="保存汤圆养护日期">保存</button></form>');
+}
+function saveCatCare(deworm,vaccine){
+  if(!S.catCare||typeof S.catCare!=="object")S.catCare={deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0};
+  var now=Date.now();
+  var nd=/^\d{4}-\d{2}-\d{2}$/.test(deworm)?deworm:"";
+  var nv=/^\d{4}-\d{2}-\d{2}$/.test(vaccine)?vaccine:"";
+  if(nd!==S.catCare.deworm){S.catCare.deworm=nd;S.catCare.dewormUAt=now;}
+  if(nv!==S.catCare.vaccine){S.catCare.vaccine=nv;S.catCare.vaccineUAt=now;}
+}
+
 
 /* ============ 台词库（与托管版同一套语料） ============ */
 var CHARACTERS=[
@@ -781,7 +907,8 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},
+    catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -851,6 +978,12 @@ function normalizeState(){
   S.junimo.catches=Math.min(3,Math.floor(S.junimo.catches));
   if(S.junimo.rewarded===undefined)S.junimo.rewarded=false;
   if(S.junimo.spot!==null&&!junimoSpotValid(S.junimo.spot))S.junimo.spot=null;
+  /* 汤圆：摸猫日期去重排序、养护日期只认 YYYY-MM-DD */
+  if(!S.catPet||typeof S.catPet!=="object"||Array.isArray(S.catPet))S.catPet={dates:[]};
+  if(!Array.isArray(S.catPet.dates))S.catPet.dates=[];
+  var cpSeen={};S.catPet.dates=S.catPet.dates.filter(function(d){return typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!cpSeen[d]&&(cpSeen[d]=1);}).sort();
+  if(!S.catCare||typeof S.catCare!=="object"||Array.isArray(S.catCare))S.catCare={deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0};
+  ["deworm","vaccine"].forEach(function(k){if(typeof S.catCare[k]!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(S.catCare[k]))S.catCare[k]="";if(typeof S.catCare[k+"UAt"]!=="number"||isNaN(S.catCare[k+"UAt"])||S.catCare[k+"UAt"]<0)S.catCare[k+"UAt"]=0;});
   if(typeof S._profileUAt!=="number")S._profileUAt=0;
 }
 var S;
@@ -1058,6 +1191,29 @@ function mergeStates(L,R){
     }
     out.junimo=jp;
   }
+  /* 汤圆摸猫：日期取并集（哪台设备摸过都算数），去重排序；陪伴心由 dates 长度派生，不单独存 */
+  (function(){
+    var seen={},dates=[];
+    [L.catPet,R.catPet].forEach(function(o){if(o&&Array.isArray(o.dates))o.dates.forEach(function(d){if(typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!seen[d]){seen[d]=1;dates.push(d);}});});
+    dates.sort();
+    out.catPet={dates:dates};
+  })();
+  /* 汤圆养护：逐项合并——一边为空取非空者；都非空且不同取 uAt 较晚者；uAt 相同（或都缺）取较早到期日 */
+  (function(){
+    function pick(lv,lu,rv,ru){
+      lv=(typeof lv==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(lv))?lv:"";
+      rv=(typeof rv==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(rv))?rv:"";
+      lu=typeof lu==="number"&&!isNaN(lu)?lu:0;ru=typeof ru==="number"&&!isNaN(ru)?ru:0;
+      if(!lv)return{date:rv,uAt:ru};
+      if(!rv||lv===rv)return{date:lv,uAt:Math.max(lu,ru)};
+      if(lu!==ru)return lu>ru?{date:lv,uAt:lu}:{date:rv,uAt:ru};
+      return lv<rv?{date:lv,uAt:lu}:{date:rv,uAt:ru};
+    }
+    var lc=(L.catCare&&typeof L.catCare==="object")?L.catCare:{},rc=(R.catCare&&typeof R.catCare==="object")?R.catCare:{};
+    var dw=pick(lc.deworm,lc.dewormUAt,rc.deworm,rc.dewormUAt);
+    var vc=pick(lc.vaccine,lc.vaccineUAt,rc.vaccine,rc.vaccineUAt);
+    out.catCare={deworm:dw.date,dewormUAt:dw.uAt,vaccine:vc.date,vaccineUAt:vc.uAt};
+  })();
   var cutoff=Date.now()-90*86400000;
   out._del=Object.keys(delMap).map(function(k){return delMap[k];}).filter(function(t){return t.ts>cutoff;});
   /* 档案取 uAt 较新者；成就取并集保留最早解锁日；已购道具取并集 */
@@ -3522,7 +3678,7 @@ function lifePage(){
     +'<button type="button" class="pix-btn" data-act="go" data-page="achievements"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("trophy",16)+" 成就图鉴（"+Object.keys(S.unlocked).length+"/"+ACHIEVEMENTS.length+"）</span></button>"
     +'<button type="button" class="pix-btn" data-act="go" data-page="shop"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("shop",16)+" 奖励商店（"+S.wallet.points+" 分）</span></button>"
     +'<button type="button" class="pix-btn" data-act="go" data-page="profile"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("card",16)+" 个人简介</span></button></div>");
-  h+=panel("宠物角","sprout",junimoPetHtml());
+  h+=panel("宠物角","sprout",petCornerHtml());
   h+='<div id="evening-news">'+panel("鹈鹕报道","news",newsSectionHtml())+"</div>";
   h+="</div>";
   return h;
@@ -5480,6 +5636,8 @@ document.addEventListener("click",function(e){
     case "banner-close":bannerQueue.shift();renderBanner();break;
     case "junimo-catch":catchJunimo();break;
     case "junimo-pet":junimoPetWave();break;
+    case "cat-pet":petCat();break;
+    case "cat-care-edit":catCareModal();break;
     case "note-open":openSecretNote();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
@@ -6113,6 +6271,9 @@ document.addEventListener("submit",function(e){
       var frid=fd("id")?Number(fd("id")):null;
       closeModal();
       mutate(function(){saveFriend(frid,frvals);});break;}
+    case "cat-care-save":{
+      closeModal();
+      mutate(function(){saveCatCare(fd("deworm"),fd("vaccine"));});break;}
     case "profile-save":{
       var split=function(s){return s.split(/[，,、\n]/).map(function(x){return x.trim();}).filter(Boolean);};
       closeModal();
