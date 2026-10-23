@@ -675,6 +675,158 @@ function saveCatCare(deworm,vaccine){
   if(nv!==S.catCare.vaccine){S.catCare.vaccine=nv;S.catCare.vaccineUAt=now;}
 }
 
+/* ============ 温室（今日页·宠物角之后）：两株长期植物，纯展示 + 满格里程碑发分 ============
+   安睡藤（key=sleep）：计数 = 锚点模板中名称含「睡觉」或「入睡」的锚点（种子数据命中 id 1008「睡觉」23:30）
+   在 anchorLogs 中 status 为 done 的日期去重数，全历史；同日多条睡觉锚点 done 只算 1 天，skip/未处理不算。
+   一条都找不到时降级为锚点全勤天数：当日适用锚点（启用且排班）全部 done 的天数，全历史（口径同 questProgressIn 的 anchor 分支）。
+   体态花（key=posture）：计数 = workouts 全历史条数（原始条数，不按天去重，与收集包/技能的运动口径一致）。
+   两株计数全部派生、不存计数器、不新增状态。阶段阈值定死：计数 >=7 第 2 段、>=14 第 3 段、>=30 第 4 段、
+   >=60 第 5 段、>=100 第 6 段（结果定格）；段名：种下/发芽/抽藤（体态花为抽枝）/长叶/开花/结果。
+   满格奖励：某株计数首次达到 100 -> +30 积分，addLedger 幂等键 greenhouse:<株key>，检测挂 render() 统一
+   检查点（checkGreenhouseGrants，与 checkForageGrants 同族）；计数回落不追回、再涨回不重发（幂等键兜底）。
+   温室无其他交互：不浇水、不手动操作。文案只陈述计数与阶段事实。 */
+var GREENHOUSE_THRESHOLDS=[0,7,14,30,60,100];
+var GREENHOUSE_STAGE_LABELS={vine:["种下","发芽","抽藤","长叶","开花","结果"],flower:["种下","发芽","抽枝","长叶","开花","结果"]};
+var GREENHOUSE_PLANTS=[
+  {key:"sleep",name:"安睡藤",kind:"vine",bar:"#5da33c"},
+  {key:"posture",name:"体态花",kind:"flower",bar:"#d96a9b"}
+];
+function greenhouseStageOf(count){
+  var c=(typeof count==="number"&&isFinite(count)&&count>0)?Math.floor(count):0;
+  var s=0;for(var i=0;i<GREENHOUSE_THRESHOLDS.length;i++)if(c>=GREENHOUSE_THRESHOLDS[i])s=i;
+  return s;
+}
+function greenhouseStageInfo(kind,count){
+  var stage=greenhouseStageOf(count);
+  var c=(typeof count==="number"&&isFinite(count)&&count>0)?Math.floor(count):0;
+  var full=stage>=GREENHOUSE_THRESHOLDS.length-1;
+  var floor=GREENHOUSE_THRESHOLDS[stage];
+  var next=full?null:GREENHOUSE_THRESHOLDS[stage+1];
+  var pct=full?100:Math.max(0,Math.min(100,Math.round((c-floor)/(next-floor)*100)));
+  return {stage:stage,label:GREENHOUSE_STAGE_LABELS[kind][stage],full:full,next:next,toNext:full?0:(next-c),pct:pct};
+}
+function greenhouseSleepAnchorsIn(st){
+  var list=(st&&Array.isArray(st.anchors))?st.anchors:[];
+  return list.filter(function(a){return a&&typeof a.text==="string"&&(a.text.indexOf("睡觉")>=0||a.text.indexOf("入睡")>=0);});
+}
+function greenhousePerfectDaysIn(st){
+  var anchors=(st&&Array.isArray(st.anchors))?st.anchors:[];
+  var logs=(st&&Array.isArray(st.anchorLogs))?st.anchorLogs:[];
+  var dates={};logs.forEach(function(l){if(l&&typeof l.date==="string")dates[l.date]=1;});
+  var cnt=0;
+  Object.keys(dates).forEach(function(date){
+    var dow=dowOf(date);
+    var list=anchors.filter(function(a){return a&&a.enabled&&(a.days==null||(Array.isArray(a.days)&&a.days.indexOf(dow)>=0));});
+    if(list.length===0)return;
+    var all=list.every(function(a){
+      var s=null;logs.forEach(function(l){if(l&&l.anchorId===a.id&&l.date===date)s=l.status;});
+      return s==="done";
+    });
+    if(all)cnt++;
+  });
+  return cnt;
+}
+function greenhouseSleepInfoIn(st){
+  var matched=greenhouseSleepAnchorsIn(st);
+  if(matched.length===0){
+    return {count:greenhousePerfectDaysIn(st),fallback:true,anchorIds:[],anchorNames:[]};
+  }
+  var ids={};matched.forEach(function(a){ids[a.id]=1;});
+  var days={};
+  ((st&&Array.isArray(st.anchorLogs))?st.anchorLogs:[]).forEach(function(l){
+    if(l&&ids[l.anchorId]&&l.status==="done"&&typeof l.date==="string")days[l.date]=1;
+  });
+  return {count:Object.keys(days).length,fallback:false,anchorIds:matched.map(function(a){return a.id;}),anchorNames:matched.map(function(a){return a.text;})};
+}
+function greenhouseSleepCountIn(st){return greenhouseSleepInfoIn(st).count;}
+function greenhousePostureCountIn(st){return ((st&&Array.isArray(st.workouts))?st.workouts:[]).filter(function(w){return !!w;}).length;}
+function greenhouseCountIn(st,key){return key==="sleep"?greenhouseSleepCountIn(st):greenhousePostureCountIn(st);}
+function greenhouseDueGrantsIn(st){
+  var ledger=(st&&Array.isArray(st.ledger))?st.ledger:[];
+  var due=[];
+  GREENHOUSE_PLANTS.forEach(function(p){
+    if(greenhouseCountIn(st,p.key)>=100&&!ledger.some(function(l){return l&&l.idem==="greenhouse:"+p.key;}))due.push(p.key);
+  });
+  return due;
+}
+/* 像素六段长势图（24x24 格，rectsSvg 渲染；每段在上一段上累加新部件，六段互不相同） */
+function greenhouseVineSvg(stage,size){
+  size=size||84;var rects=[];function R(x,y,w,h,f){rects.push([x,y,w,h,f]);}
+  var POT="#b06a3a",POTD="#8a4f26",SOIL="#5d4030",STEM="#3d7a24",LEAF="#5da33c",LEAF2="#7cc75e",BLOOM="#e58bb5",BLOOMD="#c95d8f",FRUIT="#d63b2f",FRUITL="#e8705f",SEED="#8a6a45";
+  R(7,20,10,1,POTD);R(8,21,8,3,POT);R(9,23,6,1,POTD);R(8,19,8,1,SOIL);
+  if(stage<=0){R(11,18,2,1,SEED);return rectsSvg(rects,"0 0 24 24",size,size);}
+  R(11,16,2,3,STEM);
+  R(8,15,3,2,LEAF);R(13,15,3,2,LEAF2);
+  if(stage===1)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(11,11,2,5,STEM);R(12,9,3,2,STEM);R(15,8,4,2,STEM);R(19,9,2,2,STEM);R(20,11,1,2,LEAF2);
+  if(stage===2)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(6,12,4,2,LEAF);R(14,13,4,2,LEAF2);R(8,8,3,2,LEAF2);R(17,5,3,2,LEAF);
+  if(stage===3)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(5,6,3,3,BLOOM);R(16,10,3,3,BLOOM);R(11,4,3,3,BLOOMD);
+  if(stage===4)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(6,6,2,2,FRUIT);R(7,7,1,1,FRUITL);R(17,10,2,2,FRUIT);R(12,4,2,2,FRUIT);R(13,5,1,1,FRUITL);
+  return rectsSvg(rects,"0 0 24 24",size,size);
+}
+function greenhouseFlowerSvg(stage,size){
+  size=size||84;var rects=[];function R(x,y,w,h,f){rects.push([x,y,w,h,f]);}
+  var POT="#b06a3a",POTD="#8a4f26",SOIL="#5d4030",STEM="#3d7a24",LEAF="#5da33c",LEAF2="#7cc75e",PETAL="#e58bb5",PETALD="#c95d8f",CENTER="#ffd83d",FRUIT="#f07818",FRUITL="#f5a04e",SEED="#8a6a45";
+  R(7,20,10,1,POTD);R(8,21,8,3,POT);R(9,23,6,1,POTD);R(8,19,8,1,SOIL);
+  if(stage<=0){R(11,18,2,1,SEED);return rectsSvg(rects,"0 0 24 24",size,size);}
+  R(11,16,2,3,STEM);
+  R(8,16,3,2,LEAF);R(13,16,3,2,LEAF2);
+  if(stage===1)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(11,11,2,5,STEM);R(9,13,2,2,STEM);R(13,12,2,2,STEM);R(8,12,1,2,STEM);R(15,11,1,2,STEM);
+  if(stage===2)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(5,14,4,2,LEAF);R(15,13,4,2,LEAF2);R(7,10,3,2,LEAF2);R(14,8,3,2,LEAF);
+  if(stage===3)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(9,3,6,2,PETALD);R(8,5,8,3,PETAL);R(9,8,6,2,PETALD);R(11,5,2,3,CENTER);R(5,11,3,3,PETAL);R(17,10,3,3,PETALD);
+  if(stage===4)return rectsSvg(rects,"0 0 24 24",size,size);
+  R(6,15,2,3,FRUIT);R(6,15,1,1,FRUITL);R(16,14,2,3,FRUIT);R(17,14,1,1,FRUITL);R(11,13,2,3,FRUIT);
+  return rectsSvg(rects,"0 0 24 24",size,size);
+}
+function greenhousePlantSvg(plant,stage,size){
+  return plant.kind==="vine"?greenhouseVineSvg(stage,size):greenhouseFlowerSvg(stage,size);
+}
+function greenhousePlantHtml(plant,count,sleepInfo){
+  var info=greenhouseStageInfo(plant.kind,count);
+  var fact;
+  if(plant.key==="sleep"){
+    fact=(sleepInfo&&sleepInfo.fallback)?("锚点全勤 "+count+" 天 · "+info.label):("已在 23:30 前睡下 "+count+" 天 · "+info.label);
+  }else{
+    fact="已记录运动 "+count+" 次 · "+info.label;
+  }
+  var nextLine=info.full?"已结果":("距下一段还差 "+info.toNext+(plant.key==="sleep"?" 天":" 次"));
+  return '<div class="paper-panel" style="padding:10px;min-width:0;text-align:center">'
+    +'<div style="display:flex;justify-content:center">'+greenhousePlantSvg(plant,info.stage,84)+"</div>"
+    +'<div class="small" style="font-weight:700;margin-top:4px">'+esc(plant.name)+"</div>"
+    +'<p class="small" style="margin:4px 0 2px">'+esc(fact)+"</p>"
+    +'<p class="xs dim" style="margin:0 0 6px">第 '+(info.stage+1)+" / 6 段 · "+esc(nextLine)+"</p>"
+    +'<div style="height:8px;background:#e8dcc0;border:2px solid #4a2c14"><span style="display:block;width:'+info.pct+'%;height:100%;background:'+plant.bar+'"></span></div>'
+    +"</div>";
+}
+function greenhousePanelHtml(){
+  var sleepInfo=greenhouseSleepInfoIn(S);
+  var counts={sleep:sleepInfo.count,posture:greenhousePostureCountIn(S)};
+  var inner='<p class="small dim" style="margin:0 0 10px">两株长期植物，按全历史记录长：安睡藤数睡觉锚点完成的天数，体态花数运动记录的次数。长到结果（100）时各 +30 积分。</p>'
+    +(sleepInfo.fallback?'<p class="small dim" style="margin:0 0 10px">未找到名称含「睡觉」或「入睡」的锚点，安睡藤暂按锚点全勤天数计。</p>':"")
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    +GREENHOUSE_PLANTS.map(function(p){return greenhousePlantHtml(p,counts[p.key],sleepInfo);}).join("")
+    +"</div>";
+  return panel("温室","sprout",inner);
+}
+/* 满格发奖：挂 render() 统一检查点；先算 due（计数 >=100 且账本无同幂等键）再发，重复检测不双发、回落再涨不重发 */
+function checkGreenhouseGrants(){
+  var banners=[];var today=todayStr();
+  greenhouseDueGrantsIn(S).forEach(function(key){
+    var plant=null;GREENHOUSE_PLANTS.forEach(function(p){if(p.key===key)plant=p;});
+    if(!plant)return;
+    addLedger("points",30,"温室长成："+plant.name+" 已结果",today,"greenhouse:"+key);
+    banners.push({icon:"sprout",title:"温室 · "+plant.name+" 已结果",sub:"+30 积分已到账",small:false});
+  });
+  if(banners.length)save();
+  return banners;
+}
+
 
 /* ============ 台词库（与托管版同一套语料） ============ */
 var CHARACTERS=[
@@ -4696,6 +4848,7 @@ function lifePage(){
     +'<button type="button" class="pix-btn" data-act="go" data-page="shop"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("shop",16)+" 奖励商店（"+S.wallet.points+" 分）</span></button>"
     +'<button type="button" class="pix-btn" data-act="go" data-page="profile"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("card",16)+" 个人简介</span></button></div>");
   h+=panel("宠物角","sprout",petCornerHtml());
+  h+=greenhousePanelHtml();
   h+='<div id="evening-news">'+panel("鹈鹕报道","news",newsSectionHtml())+"</div>";
   h+="</div>";
   return h;
@@ -6609,6 +6762,8 @@ function render(){
     if(museumBanners.length)pushBanners(museumBanners);
     var forageBanners=checkForageGrants();
     if(forageBanners.length)pushBanners(forageBanners);
+    var greenhouseBanners=checkGreenhouseGrants();
+    if(greenhouseBanners.length)pushBanners(greenhouseBanners);
     checkMail();
     var questBanners=checkQuests();
     if(questBanners.length)pushBanners(questBanners);
