@@ -254,6 +254,17 @@
       @media (prefers-reduced-motion: reduce){
         #secretnote,.season-amb span{animation:none!important;}
       }
+      /* 小电视（今日页）：木框 + 深色屏幕，频道按钮切换，390px 内不溢出 */
+      .tv-ant{display:flex;justify-content:center;gap:30px;height:12px;pointer-events:none;}
+      .tv-ant i{display:block;width:3px;height:12px;background:#4a2c14;}
+      .tv-ant i:first-child{transform:rotate(-18deg);}
+      .tv-ant i:last-child{transform:rotate(18deg);}
+      .tv-screen{background:#223140;border:3px solid #4a2c14;box-shadow:inset 0 0 0 2px #3d5a74,inset 0 0 18px rgba(0,0,0,.45);border-radius:3px;color:#ffe9a8;padding:12px;min-height:78px;cursor:pointer;overflow-wrap:break-word;}
+      .tv-screen .tv-ch-name{font-size:12px;color:#a8d8f0;margin:0 0 6px;}
+      .tv-screen .tv-text{font-size:15px;line-height:1.7;margin:0;color:#fff6da;}
+      .tv-chans{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+      .tv-feet{display:flex;justify-content:space-between;padding:0 26px;margin-top:6px;pointer-events:none;}
+      .tv-feet i{display:block;width:22px;height:5px;background:#4a2c14;}
     </style>
   </head>
   <body class="locked" style="overflow:hidden">
@@ -2551,7 +2562,7 @@ var ui={
   habitForm:{name:"",icon:"sprout",kind:"daily",target:3},
   anchorForm:{mode:"daily",days:[1]},
   cycleForm:{type:"days",catSel:"全屋清洁"},
-  workFocus:null,
+  workFocus:null,tvChannel:"weather",tvTipShift:0,
   planFollow:true,reviewFollow:true,newsFollow:true,
   workList:{office:{q:"",status:"未完成"},medical:{q:"",status:"未完成",district:"全部",soon:false},cert:{q:"",status:"未完成",district:"全部",soon:false}},
   shopMsg:""
@@ -2698,6 +2709,7 @@ var FESTIVALS={};
 })();
 function festivalOf(date){return FESTIVALS[date]||null;}
 function ledgerHasIdem(idem){return S.ledger.some(function(l){return l.idem===idem;});}
+ICONS.tv=[[4,0,1,3,"#4a2c14"],[11,0,1,3,"#4a2c14"],[5,1,1,2,"#4a2c14"],[10,1,1,2,"#4a2c14"],[6,2,4,1,"#4a2c14"],[2,3,12,10,"#8a5a2b"],[2,3,12,1,"#a5713d"],[3,4,8,8,"#a8d8f0"],[4,5,3,3,"#cdeafd"],[12,5,1,2,"#ffd83d"],[12,9,1,2,"#f0a832"],[4,13,2,1,"#4a2c14"],[10,13,2,1,"#4a2c14"]];
 ICONS.noteSlip=[[3,2,9,12,"#fff6da"],[3,2,9,1,"#efe6cc"],[3,13,9,1,"#d8cba8"],[3,2,1,12,"#e8dcc0"],[11,2,1,4,"#e8dcc0"],[9,2,3,1,"#d8cba8"],[9,3,2,1,"#d8cba8"],[10,4,2,1,"#d8cba8"],[5,6,5,1,"#8a6a45"],[5,8,5,1,"#8a6a45"],[5,10,3,1,"#b99b62"]];
 ICONS.stardropGray=[[8,1,2,3,"#6a6a78"],[7,3,4,2,"#8a8a99"],[8,5,2,2,"#a8a8b8"],[6,7,6,2,"#a8a8b8"],[5,7,1,2,"#8a8a99"],[11,7,1,2,"#8a8a99"],[6,9,2,3,"#a8a8b8"],[10,9,2,3,"#a8a8b8"],[7,12,1,2,"#8a8a99"],[10,12,1,2,"#8a8a99"],[8,7,1,1,"#d8d8e0"]];
 
@@ -3176,6 +3188,185 @@ function go(page,arg){
   render();
 }
 
+/* ============ 小电视（今日页三频道：天气 / 今日宜忌 / 生活窍门） ============
+   频道状态只放 ui（当次会话，不入 S）；天气结果只缓存在当次会话变量里，不入 S。
+   天气拉不到时不抛错、不卡页，回退到最近节气的事实句。 */
+/* === TV-BEGIN === */
+var TV_CHANNELS=[{key:"weather",label:"天气"},{key:"yiji",label:"今日宜忌"},{key:"tips",label:"生活窍门"}];
+var tvWeatherCache={date:"",text:"",loading:false};
+function tvWeatherCodeText(code){
+  var c=Number(code);
+  if(c===0)return "晴";
+  if(c===1)return "晴间多云";
+  if(c===2)return "多云";
+  if(c===3)return "阴";
+  if(c===45||c===48)return "有雾";
+  if(c===51||c===53||c===55)return "毛毛雨";
+  if(c===56||c===57)return "冻毛毛雨";
+  if(c===61)return "小雨";
+  if(c===63)return "中雨";
+  if(c===65)return "大雨";
+  if(c===66||c===67)return "冻雨";
+  if(c===71)return "小雪";
+  if(c===73)return "中雪";
+  if(c===75)return "大雪";
+  if(c===77)return "雪粒";
+  if(c===80)return "阵雨";
+  if(c===81)return "阵雨";
+  if(c===82)return "大阵雨";
+  if(c===85||c===86)return "阵雪";
+  if(c===95)return "雷阵雨";
+  if(c===96||c===99)return "雷阵雨伴冰雹";
+  return "天气状况不明";
+}
+function tvParseWeather(j){
+  var d=j&&j.daily;if(!d)return null;
+  var codes=d.weather_code||d.weathercode;
+  var maxs=d.temperature_2m_max,mins=d.temperature_2m_min;
+  if(!codes||!maxs||!mins||codes.length===0||maxs.length===0||mins.length===0)return null;
+  var lo=Math.round(Number(mins[0])),hi=Math.round(Number(maxs[0]));
+  if(!isFinite(lo)||!isFinite(hi))return null;
+  return "成都今日"+tvWeatherCodeText(codes[0])+"，"+lo+"–"+hi+"°C";
+}
+function tvNearestTerm(today){
+  var best=null;
+  var years=[["2026",TERM_2026],["2027",TERM_2027]];
+  years.forEach(function(y){
+    TERM_NAMES.forEach(function(n,i){
+      var date=y[0]+"-"+y[1][i];
+      var diff=daysUntil(today,date);if(diff==null)return;
+      var ad=Math.abs(diff);
+      if(!best||ad<best.ad)best={name:n,fact:TERM_FACTS[i],date:date,ad:ad,diff:diff};
+    });
+  });
+  return best;
+}
+function tvFallbackWeatherText(today){
+  var s=seasonOf(today);
+  var t=tvNearestTerm(today);
+  if(!t)return "天气信号暂时收不到。今天是"+s.season+"季。";
+  var when=t.diff===0?"今天就是"+t.name:(t.diff>0?"再过 "+t.diff+" 天是"+t.name:"已过去 "+(-t.diff)+" 天");
+  return "天气信号暂时收不到。距今最近的节气是"+t.name+"（"+t.date+"，"+when+"）。"+t.fact+"现在是"+s.season+"季。";
+}
+function tvWeatherUrl(){
+  return "https://api.open-meteo.com/v1/forecast?latitude=30.67&longitude=104.06&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FShanghai&forecast_days=1";
+}
+/* 拉天气：成功返回事实句，任何失败（离线/超时/接口异常/数据不合格式）都返回节气回退句，永不 reject */
+function tvFetchWeatherText(fetchFn,today){
+  var f=fetchFn||(typeof fetch!=="undefined"?fetch:null);
+  if(!f)return Promise.resolve(tvFallbackWeatherText(today));
+  var timeout=new Promise(function(_,rej){setTimeout(function(){rej(new Error("tv-weather-timeout"));},8000);});
+  var work=Promise.resolve().then(function(){return f(tvWeatherUrl());}).then(function(r){
+    if(!r||r.ok===false)throw new Error("tv-weather-http");
+    return r.json();
+  }).then(function(j){
+    var text=tvParseWeather(j);
+    if(!text)throw new Error("tv-weather-format");
+    return text;
+  });
+  return Promise.race([work,timeout]).catch(function(){return tvFallbackWeatherText(today);});
+}
+function tvStartWeather(){
+  if(typeof document==="undefined")return;
+  var today=todayStr();
+  if(tvWeatherCache.date===today&&tvWeatherCache.text){tvApplyWeatherText(tvWeatherCache.text);return;}
+  if(tvWeatherCache.loading)return;
+  tvWeatherCache.loading=true;
+  tvFetchWeatherText(null,today).then(function(text){
+    tvWeatherCache={date:today,text:text,loading:false};
+    tvApplyWeatherText(text);
+  });
+}
+function tvApplyWeatherText(text){
+  if(typeof document==="undefined")return;
+  var el=document.getElementById("tv-screen-text");
+  if(el)el.textContent=text;
+}
+/* 今日宜忌：只从当天事实推导——今日锚点（anchorsForDate）、todayScope 的到期/逾期工作件数、今日待办未完成件数 */
+function tvYijiText(today,anchors,workCount,todoUndone,lowMood){
+  var yi=[],ji=[];
+  var hasSwim=false,hasBarre=false,hasMovie=false,hasHouse=false,hasMenu=false;
+  (anchors||[]).forEach(function(a){
+    var tx=a.text||"";
+    if(tx.indexOf("游泳")>=0)hasSwim=true;
+    if(tx.indexOf("芭杆")>=0)hasBarre=true;
+    if(tx.indexOf("电影")>=0)hasMovie=true;
+    if(tx.indexOf("洗衣")>=0||tx.indexOf("打扫")>=0)hasHouse=true;
+    if(tx.indexOf("食谱")>=0)hasMenu=true;
+  });
+  function anchorBy(substr){var f=null;(anchors||[]).forEach(function(a){if(!f&&(a.text||"").indexOf(substr)>=0)f=a;});return f;}
+  if(hasSwim){var sa=anchorBy("游泳");yi.push("游泳（"+(sa&&sa.time&&Number(sa.time.slice(0,2))>=17?"今晚":"今天")+"有游泳安排"+(sa&&sa.time?"，"+sa.time+" 出门或开始":"")+"）");}
+  if(hasBarre){var ba=anchorBy("芭杆");yi.push("芭杆（今天有芭杆锚点"+(ba&&ba.time?"，"+ba.time+" 开始":"")+"）");}
+  if(hasMovie)yi.push("看电影（今天有电影锚点）");
+  if(hasHouse)yi.push("洗衣和打扫（今天有家务锚点）");
+  if(hasMenu)yi.push("定食谱和采购（今天有这个锚点）");
+  if(workCount>0)yi.push("先处理到期工作（今天有 "+workCount+" 件到期或逾期）");
+  if(todoUndone>0)yi.push("做完手头待办（今天还有 "+todoUndone+" 件未完成）");
+  if(yi.length===0)yi.push("按今天的锚点过完今天（今日锚点 "+(anchors||[]).length+" 项）");
+  if(workCount>0){
+    ji.push(lowMood?("把 "+workCount+" 件到期事项全堆到明天（今天可以先挑一件做）"):("把 "+workCount+" 件到期或逾期的工作事项拖到明天"));
+  }else{
+    ji.push("无（今天没有到期或逾期的工作事项）");
+  }
+  return "宜："+yi.join("、")+"；忌："+ji.join("、");
+}
+function tvYijiForToday(today){
+  var sc=todayScope();
+  var undone=sc.todos.filter(function(t){return !t.done;}).length;
+  return tvYijiText(today,anchorsForDate(today),sc.work.length,undone,lowMoodDay());
+}
+var TV_TIPS=[
+  "切好的土豆丝泡在清水里，能洗掉表面淀粉，炒的时候不容易粘锅。",
+  "绿叶菜沥干水再下锅，油溅得少，炒出来也不容易出水。",
+  "冰箱冷藏室不要塞满，留出空隙让冷气循环，食物降温更均匀。",
+  "生肉和熟食在冰箱里分开放，生肉放下层，避免汁液滴到熟食上。",
+  "鸡蛋大头朝上放，气室在上，蛋黄不容易贴壳。",
+  "干香菇用温水泡发，泡香菇的水沉淀后可以用来烧菜。",
+  "白色衣物上的汗渍先用冷水洗，热水会让蛋白质类污渍更难洗掉。",
+  "毛巾洗后充分晾干再收起来，潮湿叠放容易有异味。",
+  "微波炉里放一小碗水加热几分钟，水汽能让内壁的干结污渍变软，再擦更好擦。",
+  "水龙头的水垢用白醋湿敷一会儿再擦，酸可以溶解水垢。",
+  "砧板切过生肉后要洗净晾干，生熟食物用两块砧板分开。",
+  "保存大米的容器保持干燥密封，可以减少生虫和返潮。",
+  "深色新衣第一次单独洗，初洗容易浮色，单独洗不会染到浅色衣服。",
+  "雨伞用完先撑开晾干再收，伞面干了不容易发霉有味。",
+  "电池长时间不用要从遥控器里取出，漏液会腐蚀触点。",
+  "抽油烟机油盒里先垫一张厨房纸，倒油时连纸一起处理，油盒更好洗。"
+];
+function tvTipIndexFor(today,shift){
+  var base=newsHash("tv-tip|"+today)%TV_TIPS.length;
+  var n=TV_TIPS.length;
+  return (((base+(shift||0))%n)+n)%n;
+}
+function tvTipText(today,shift){return TV_TIPS[tvTipIndexFor(today,shift)];}
+function tvChannelContentHtml(today){
+  var ch=ui.tvChannel||"weather";
+  if(ch==="yiji"){
+    return '<p class="tv-ch-name font-pixel">频道 2 · 今日宜忌（按今天的事实生成）</p><p class="tv-text" id="tv-yiji-text">'+esc(tvYijiForToday(today))+"</p>";
+  }
+  if(ch==="tips"){
+    return '<p class="tv-ch-name font-pixel">频道 3 · 生活窍门</p><p class="tv-text" id="tv-tip-text">'+esc(tvTipText(today,ui.tvTipShift||0))+"</p>"
+      +'<div style="margin-top:10px"><button type="button" class="pix-btn pix-btn-ghost" data-act="tv-tip-next" aria-label="换一条生活窍门">换一条</button></div>';
+  }
+  var wtext=tvWeatherCache.date===today&&tvWeatherCache.text?tvWeatherCache.text:"正在接收天气信号…";
+  return '<p class="tv-ch-name font-pixel">频道 1 · 天气（成都）</p><p class="tv-text" id="tv-screen-text">'+esc(wtext)+"</p>";
+}
+function tvPanelHtml(today){
+  var ch=ui.tvChannel||"weather";
+  var btns=TV_CHANNELS.map(function(c,i){
+    var on=ch===c.key;
+    return '<button type="button" class="pix-btn '+(on?"pix-btn-green":"pix-btn-ghost")+'" data-act="tv-channel" data-ch="'+c.key+'" aria-label="电视切换到'+c.label+'频道" aria-pressed="'+(on?"true":"false")+'">'+(i+1)+" "+c.label+"</button>";
+  }).join("");
+  return '<section class="wood-panel panel" aria-label="小电视">'
+    +'<div class="tv-ant" aria-hidden="true"><i></i><i></i></div>'
+    +'<h2 class="font-pixel">'+pixIcon("tv",21)+"小电视</h2>"
+    +'<div class="tv-screen" data-act="tv-screen" role="button" tabindex="0" aria-label="电视屏幕，点按切换到下一个频道">'+tvChannelContentHtml(today)+"</div>"
+    +'<div class="tv-chans" role="group" aria-label="电视频道">'+btns+"</div>"
+    +'<div class="tv-feet" aria-hidden="true"><i></i><i></i></div>'
+    +"</section>";
+}
+/* === TV-END === */
+
 /* ============ 页面：今日 ============ */
 function newsSectionHtml(){
   var date=ui.newsDate||todayStr();
@@ -3240,6 +3431,7 @@ function lifePage(){
   var h='<div class="stack">';
   h+='<div class="wood-sign font-pixel" style="padding:8px 12px;text-align:center;font-size:13px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">'+pixIcon(s.icon,16)+" "+s.season+"季 "+s.day+" 日 · 星期"+weekdayOf(today)+" · "+today+"</span></div>";
   h+=seasonAmbienceHtml(today);
+  h+=tvPanelHtml(today);
   /* 今天先做这三件（生活首页）：只取今日未完成的生活待办，工作事务不混进来（工作侧同款小块在今日工作页顶部）；仅聚合展示，不存第二份数据 */
   var focusList=[];
   my.forEach(function(t){if(!t.done)focusList.push({type:"todo",id:t.id,title:t.text,due:today,est:0,meta:"今日待办"});});
@@ -5184,6 +5376,7 @@ function renderPage(){
     default:html=lifePage();
   }
   document.getElementById("page").innerHTML=html;
+  if(p==="life")tvStartWeather();
   document.getElementById("page-title").textContent=PAGE_TITLES[p]||"今日";
   document.getElementById("main").classList.toggle("workbg",p==="calendar"?ui.calSpace==="work":!!WORK_PAGES[p]);
 }
@@ -5281,6 +5474,9 @@ document.addEventListener("click",function(e){
     case "drawer-open":ui.drawer=true;renderDrawer();break;
     case "drawer-close":ui.drawer=false;renderDrawer();break;
     case "collapse":ui.collapsed=!ui.collapsed;renderSidebar();break;
+    case "tv-channel":ui.tvChannel=el.dataset.ch||"weather";render();break;
+    case "tv-screen":{var tvi=0;TV_CHANNELS.forEach(function(c,ci){if(c.key===(ui.tvChannel||"weather"))tvi=ci;});ui.tvChannel=TV_CHANNELS[(tvi+1)%TV_CHANNELS.length].key;render();break;}
+    case "tv-tip-next":ui.tvTipShift=(ui.tvTipShift||0)+1;render();break;
     case "banner-close":bannerQueue.shift();renderBanner();break;
     case "junimo-catch":catchJunimo();break;
     case "junimo-pet":junimoPetWave();break;
