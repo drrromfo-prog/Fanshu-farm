@@ -251,6 +251,15 @@
       @media (prefers-reduced-motion: reduce){
         #forage-spot{animation:none!important;}
       }
+      /* 随机事件层：陨石 132（低于采集物 133/纸条 134/祝尼魔 135）；猫头鹰随顶栏内联渲染（见 randOwlHudHtml），不用浮层 */
+      #rand-meteor{position:fixed;z-index:132;background:none;border:0;padding:2px;cursor:pointer;line-height:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.3));animation:junimosway 3.8s ease-in-out infinite;}
+      #rand-owl{flex-shrink:0;filter:drop-shadow(2px 3px 0 rgba(46,26,8,.35));}
+      .fairy-plot{outline:2px dashed #c9a8e0;outline-offset:-2px;}
+      .fairy-spark{display:inline-flex;line-height:0;animation:fairyspark 1.2s ease-in-out infinite;}
+      @keyframes fairyspark{0%,100%{opacity:.35;transform:translateY(0);}50%{opacity:1;transform:translateY(-2px);}}
+      @media (prefers-reduced-motion: reduce){
+        #rand-meteor,.fairy-spark{animation:none!important;}
+      }
       .fest-mark{display:inline-flex;line-height:0;}
       /* 今日页四季轻氛围：小色点轻浮动（复用天气特效的视觉语言） */
       .season-amb{position:relative;height:14px;overflow:visible;pointer-events:none;margin-top:2px;}
@@ -296,6 +305,8 @@
     <div id="junimo-root"></div>
     <div id="secretnote-root"></div>
     <div id="forage-root"></div>
+    <div id="randmeteor-root"></div>
+    <div id="randowl-root"></div>
     <div id="companion-root"></div>
     <script>
 "use strict";
@@ -1094,7 +1105,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},forage:{date:"",itemId:null,page:null,corner:null,found:[],uAt:0},forageDex:{},
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},forage:{date:"",itemId:null,page:null,corner:null,found:[],uAt:0},forageDex:{},randEvent:{date:"",type:"none",payload:null,consumed:false},meteorOwned:false,
     mail:[],quests:{week:"",pool:[],active:[],done:[]},catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
@@ -1135,6 +1146,13 @@ function normalizeState(){
   if(!S.forage||typeof S.forage!=="object"||Array.isArray(S.forage))S.forage={date:"",itemId:null,page:null,corner:null,found:[],uAt:0};
   if(!Array.isArray(S.forage.found))S.forage.found=[];
   if(!S.forageDex||typeof S.forageDex!=="object"||Array.isArray(S.forageDex))S.forageDex={};
+  if(!S.randEvent||typeof S.randEvent!=="object"||Array.isArray(S.randEvent))S.randEvent={date:"",type:"none",payload:null,consumed:false};
+  if(typeof S.randEvent.date!=="string")S.randEvent.date="";
+  if(["meteor","fairy","owl","none"].indexOf(S.randEvent.type)<0)S.randEvent.type="none";
+  if(S.randEvent.payload!==null&&(typeof S.randEvent.payload!=="object"||Array.isArray(S.randEvent.payload)))S.randEvent.payload=null;
+  S.randEvent.consumed=!!S.randEvent.consumed;
+  S.meteorOwned=S.meteorOwned===true;
+  Object.keys(S.garden).forEach(function(k){var g=S.garden[k];if(g&&typeof g==="object"&&(typeof g.bonus!=="number"||isNaN(g.bonus)||g.bonus<0))g.bonus=0;});
   if(!Array.isArray(S._del))S._del=[];
   var cutoff=Date.now()-90*86400000;
   S._del=S._del.filter(function(t){return t&&typeof t.ts==="number"&&t.ts>cutoff;});
@@ -1499,6 +1517,9 @@ function mergeStates(L,R){
   var forageMerged=mergeForageStates(L,R);
   out.forage=forageMerged.forage;
   out.forageDex=forageMerged.forageDex;
+  /* 随机事件：date 大者整份胜出、同 date 取 consumed 份（防已消费事件合并后复活重发）；meteorOwned 取或（详见 mergeRandEventStates） */
+  out.randEvent=mergeRandEventStates(L,R);
+  out.meteorOwned=(L.meteorOwned===true)||(R.meteorOwned===true);
   /* 技能升级发奖进度：每维取已发奖到的较高等级，防止两台设备合并后重复发奖 */
   (function(){
     var sg={};
@@ -1509,9 +1530,9 @@ function mergeStates(L,R){
   (function(){
     var gm={};
     [L.garden,R.garden].forEach(function(o){if(o&&typeof o==="object"&&!Array.isArray(o))Object.keys(o).forEach(function(k){
-      var v=o[k]||{};var hv=Number(v.harvests)||0,cyc=Number(v.cycle)||0;
-      if(!gm[k])gm[k]={crop:gardenCropFor(k).key,harvests:hv,cycle:cyc};
-      else{gm[k].harvests=Math.max(gm[k].harvests,hv);gm[k].cycle=Math.max(gm[k].cycle,cyc);}
+      var v=o[k]||{};var hv=Number(v.harvests)||0,cyc=Number(v.cycle)||0,bv=Number(v.bonus)||0;
+      if(!gm[k])gm[k]={crop:gardenCropFor(k).key,harvests:hv,cycle:cyc,bonus:bv};
+      else{gm[k].harvests=Math.max(gm[k].harvests,hv);gm[k].cycle=Math.max(gm[k].cycle,cyc);gm[k].bonus=Math.max(gm[k].bonus,bv);}
     });});
     out.garden=gm;
   })();
@@ -1916,9 +1937,10 @@ function gardenCropFor(habitId){
 function gardenEntry(habitId){
   if(!S.garden||typeof S.garden!=="object"||Array.isArray(S.garden))S.garden={};
   var g=S.garden[habitId];
-  if(!g||typeof g!=="object"){g={crop:gardenCropFor(habitId).key,harvests:0,cycle:0};S.garden[habitId]=g;}
+  if(!g||typeof g!=="object"){g={crop:gardenCropFor(habitId).key,harvests:0,cycle:0,bonus:0};S.garden[habitId]=g;}
   if(typeof g.harvests!=="number"||g.harvests<0)g.harvests=0;
   if(typeof g.cycle!=="number"||g.cycle<0)g.cycle=0;
+  if(typeof g.bonus!=="number"||isNaN(g.bonus)||g.bonus<0)g.bonus=0;
   g.crop=gardenCropFor(habitId).key;
   return g;
 }
@@ -1948,11 +1970,11 @@ function gardenProgress(habitId){
   var h=findById(S.habits,habitId);
   var g=gardenEntry(habitId);
   var total=S.habitLogs.filter(function(l){return l.habitId===habitId;}).length;
-  var count=Math.max(0,total-10*g.cycle);
+  var count=Math.max(0,total-10*g.cycle+(g.bonus||0)); /* 仙女加成 bonus 并入本轮计数（已消费累计，合并取大） */
   var stage=gardenStageOf(count);
   return {count:count,stage:stage,stageLabel:GARDEN_STAGE_LABELS[stage],
     crop:g.crop,cropLabel:(GARDEN_CROPS.filter(function(c){return c.key===g.crop;})[0]||GARDEN_CROPS[0]).label,
-    total:total,cycle:g.cycle,harvests:g.harvests,
+    total:total,cycle:g.cycle,harvests:g.harvests,bonus:g.bonus||0,
     wilted:h?gardenWilted(h):false,mature:count>=10};
 }
 /* 作物像素图：5 阶段递进（种子->新芽->小苗->开花->成熟结果）+ 蔫态（换枯色、整体耷拉右倾下沉） */
@@ -2043,9 +2065,11 @@ function gardenPanelHtml(active){
   }else{
     plots='<div class="grid-cards3">'+active.map(function(x){
       var pr=gardenProgress(x.id);
-      return '<article class="paper-panel" style="padding:10px;text-align:center">'
+      var fairyHere=fairyActiveFor(x.id);
+      return '<article class="paper-panel'+(fairyHere?" fairy-plot":"")+'" style="padding:10px;text-align:center">'
         +'<div style="display:flex;justify-content:center">'+gardenCropSvg(pr.crop,pr.stage,pr.wilted,46)+"</div>"
         +'<p class="xs" style="margin:4px 0 0"><b>'+esc(x.name)+'</b> · '+esc(pr.cropLabel)+"</p>"
+        +(fairyHere?'<p class="xs" style="margin:2px 0 0"><span class="fairy-spark">'+pixIcon("star",12)+'</span> 仙女来过 · 下一次打卡本轮进度 +2</p>':"")
         +'<p class="xs dim" style="margin:2px 0 0">'+(pr.wilted?"有点蔫了 · ":pr.stageLabel+" · ")+"本轮 "+Math.min(pr.count,10)+" / 10 次</p>"
         +(pr.mature?'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" style="margin-top:6px" data-act="garden-harvest" data-id="'+x.id+'" aria-label="收获 '+esc(x.name)+" 的 "+esc(pr.cropLabel)+'">收获 +15 G</button>':"")
         +"</article>";
@@ -2313,6 +2337,8 @@ function toggleHabitToday(id){
     S.habitLogs=S.habitLogs.filter(function(l){return l.id!==first.id;});
   }else if(!habit.graduated){
     S.habitLogs.unshift({id:uid(),habitId:id,date:today,uAt:Date.now()});
+    var fairyBanner=consumeFairyFor(id); /* 作物仙女：该习惯有未消费仙女标记时，本次打卡消费它（菜园 bonus +2） */
+    if(fairyBanner)banners.push(fairyBanner);
     var goal=habit.kind==="daily"?7:habit.weeklyTarget;
     if(habit.kind==="daily"){
       if(!ledgerHas("习惯浇水："+habit.name,today))addLedger("gold",5,"习惯浇水："+habit.name,today);
@@ -4065,6 +4091,158 @@ function mergeForageStates(L,R){
   return {forage:forage,forageDex:dex};
 }
 
+
+/* ---------- 11.8 随机事件（全站） ---------- */
+/* 每日首次打开（render 统一状态检查点 randEventEnsureToday）定当天至多一件事：
+   S.randEvent={date,type,payload,consumed}，type ∈ meteor/fairy/owl/none，概率 15% / 15% / 20% / 50%。
+   生成口径：类型大盘由日期种子（FNV-1a 哈希 + mulberry32）决定，跨设备同日同类型尽量一致；
+   payload 细节（陨石页角、仙女习惯）用 Math.random。最终以先生成者为准——同日已存事件直接采用、
+   不重抽；别的设备同步到已存事件后同日照用。合并见 mergeRandEventStates。
+   发金币走 addLedger 幂等键 event:<date>（每日至多一事、三类互斥，同键不会撞）。
+   陨石拾取置 S.meteorOwned=true，博物馆 museumMeteorInfoIn 据此点亮陨石展品。
+   仙女加成走菜园 bonus：S.garden[habitId].bonus 为已消费的仙女加成累计数，gardenProgress 的
+   count = habitLogs 总数 − 10×cycle + bonus；合并时 bonus 取大。标记不跨日：次日重抽、旧标记随整份作废。 */
+var RAND_EVENT_TYPES=["meteor","fairy","owl","none"];
+ICONS.owl=[[3,1,3,2,"#6b4a2a"],[10,1,3,2,"#6b4a2a"],[3,3,10,2,"#8a6238"],[2,5,12,6,"#8a6238"],[4,5,3,3,"#f5e8c8"],[9,5,3,3,"#f5e8c8"],[5,6,1,1,"#241408"],[10,6,1,1,"#241408"],[7,8,2,1,"#f0a832"],[1,7,2,4,"#6b4a2a"],[13,7,2,4,"#6b4a2a"],[4,11,8,3,"#a5713d"],[5,12,2,1,"#f5e8c8"],[9,12,2,1,"#f5e8c8"],[5,14,2,1,"#f0a832"],[9,14,2,1,"#f0a832"]];
+function randSeedOf(str){var h=2166136261;for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function randSeededFn(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
+function randEventTypeForDate(date){var r=randSeededFn(randSeedOf("randEvent:"+date))();if(r<0.15)return "meteor";if(r<0.30)return "fairy";if(r<0.50)return "owl";return "none";}
+/* 当日被三方藏点占用的页角（祝尼魔活动藏点 + 未找到的纸条 + 未采集的采集物），陨石生成/修复时让位 */
+function randEventBlockedSpots(){
+  var out=[];var today=todayStr();
+  var j=S.junimo;
+  if(j&&j.spot&&j.date===today&&!j.rewarded&&(j.catches||0)<3)out.push({page:j.spot.page,corner:j.spot.corner});
+  var n=S.notes;
+  if(n&&n.date===today&&n.page&&n.corner&&!noteFoundToday())out.push({page:n.page,corner:n.corner});
+  var f=S.forage;
+  if(f&&f.date===today&&f.page&&f.corner&&f.itemId&&!forageCollectedToday())out.push({page:f.page,corner:f.corner});
+  return out;
+}
+function randEventSpotBlocked(blocked,pg,cn){for(var i=0;i<blocked.length;i++)if(blocked[i].page===pg&&blocked[i].corner===cn)return true;return false;}
+/* 找一个不冲突的页角：preferPage 给定时先扫该页四角（换角优先），再全表扫描；全满返回 null */
+function randEventFindFreeSpot(blocked,preferPage){
+  if(preferPage&&JUNIMO_PAGES.indexOf(preferPage)>=0){
+    for(var k=0;k<JUNIMO_CORNERS.length;k++)if(!randEventSpotBlocked(blocked,preferPage,JUNIMO_CORNERS[k]))return {page:preferPage,corner:JUNIMO_CORNERS[k]};
+  }
+  for(var i=0;i<JUNIMO_PAGES.length;i++)for(var k2=0;k2<JUNIMO_CORNERS.length;k2++)if(!randEventSpotBlocked(blocked,JUNIMO_PAGES[i],JUNIMO_CORNERS[k2]))return {page:JUNIMO_PAGES[i],corner:JUNIMO_CORNERS[k2]};
+  return null;
+}
+/* 生成当日事件（randFn 可注入以便测试；类型只认日期种子，payload 细节走 randFn） */
+function randEventBuild(date,randFn){
+  var rnd=typeof randFn==="function"?randFn:Math.random;
+  var type=randEventTypeForDate(date);
+  if(type==="meteor"){
+    var blocked=randEventBlockedSpots();
+    var spot=null;
+    for(var t=0;t<16&&!spot;t++){
+      var pg=JUNIMO_PAGES[Math.floor(rnd()*JUNIMO_PAGES.length)];
+      var cn=JUNIMO_CORNERS[Math.floor(rnd()*JUNIMO_CORNERS.length)];
+      if(!randEventSpotBlocked(blocked,pg,cn))spot={page:pg,corner:cn};
+    }
+    if(!spot)spot=randEventFindFreeSpot(blocked,JUNIMO_PAGES[Math.floor(rnd()*JUNIMO_PAGES.length)]);
+    if(!spot)return {date:date,type:"none",payload:null,consumed:true}; /* 四角全被占：当日作废 */
+    return {date:date,type:"meteor",payload:{page:spot.page,corner:spot.corner},consumed:false};
+  }
+  if(type==="fairy"){
+    var active=S.habits.filter(function(x){return !x.graduated&&!x.archived;});
+    if(active.length===0)return {date:date,type:"none",payload:null,consumed:true}; /* 无在册习惯：当日作废 */
+    var pickH=active[Math.floor(rnd()*active.length)];
+    return {date:date,type:"fairy",payload:{habitId:pickH.id},consumed:false};
+  }
+  if(type==="owl")return {date:date,type:"owl",payload:{},consumed:false};
+  return {date:date,type:"none",payload:null,consumed:false};
+}
+function randEventEnsureToday(randFn){
+  var today=todayStr();var changed=false;
+  var e=S.randEvent;
+  if(!e||typeof e!=="object"||Array.isArray(e)){S.randEvent={date:"",type:"none",payload:null,consumed:false};e=S.randEvent;changed=true;}
+  if(e.date!==today){S.randEvent=randEventBuild(today,randFn);return true;}
+  /* 同日已存事件：不重抽。仅修复存量问题（多设备合并后可能出现） */
+  if(e.type==="meteor"&&!e.consumed){
+    if(!e.payload||JUNIMO_PAGES.indexOf(e.payload.page)<0||JUNIMO_CORNERS.indexOf(e.payload.corner)<0){e.type="none";e.payload=null;e.consumed=true;changed=true;}
+    else{
+      var blocked=randEventBlockedSpots();
+      if(randEventSpotBlocked(blocked,e.payload.page,e.payload.corner)){
+        /* 与三方藏点同页同角：优先同页换角，无空角再换页，全满当日作废 */
+        var freeC=null;
+        for(var k=0;k<JUNIMO_CORNERS.length;k++){var cn=JUNIMO_CORNERS[k];if(cn!==e.payload.corner&&!randEventSpotBlocked(blocked,e.payload.page,cn)){freeC=cn;break;}}
+        if(freeC)e.payload.corner=freeC;
+        else{var sp=randEventFindFreeSpot(blocked,null);if(sp){e.payload.page=sp.page;e.payload.corner=sp.corner;}else{e.type="none";e.payload=null;e.consumed=true;}}
+        changed=true;
+      }
+    }
+  }
+  if(e.type==="fairy"&&!e.consumed){
+    var hid=e.payload?e.payload.habitId:null;
+    var hh=hid!=null?findById(S.habits,hid):null;
+    if(!hh||hh.archived||hh.graduated){e.type="none";e.payload=null;e.consumed=true;changed=true;}
+  }
+  return changed;
+}
+function fairyActiveFor(habitId){
+  var e=S.randEvent;
+  return !!(e&&e.date===todayStr()&&e.type==="fairy"&&!e.consumed&&e.payload&&e.payload.habitId===habitId);
+}
+/* 仙女消费钩子：toggleHabitToday 在打卡成功（新增一条 habitLog）后调用；消费后标记消失、bonus +2 */
+function consumeFairyFor(habitId){
+  if(!fairyActiveFor(habitId))return null;
+  S.randEvent.consumed=true;
+  var g=gardenEntry(habitId);
+  g.bonus=(g.bonus||0)+2;
+  var h=findById(S.habits,habitId);
+  return {icon:"star",title:"作物仙女来过："+(h?h.name:""),sub:"菜园本轮进度 +2",small:true};
+}
+function renderRandEventLayers(){renderMeteorLayer();renderOwlLayer();}
+function renderMeteorLayer(){
+  var root=document.getElementById("randmeteor-root");if(!root)return;
+  var e=S.randEvent;
+  if(!e||e.type!=="meteor"||e.consumed||!e.payload||e.date!==todayStr()||e.payload.page!==ui.page||document.body.classList.contains("locked")){root.innerHTML="";return;}
+  root.innerHTML='<button type="button" id="rand-meteor" data-act="rand-meteor-pick" aria-label="一颗陨石" style="'+junimoCornerStyle(e.payload.corner)+'">'+pixIcon("meteor",34)+"</button>";
+}
+function pickMeteor(){
+  var e=S.randEvent;
+  if(!e||e.type!=="meteor"||e.consumed||!e.payload||e.payload.page!==ui.page||e.date!==todayStr())return;
+  mutate(function(){
+    S.meteorOwned=true;
+    S.randEvent.consumed=true;
+    addLedger("gold",10,"随机事件：拾取陨石",todayStr(),"event:"+todayStr());
+    return [{icon:"meteor",title:"拾取了陨石碎片",sub:"+10 G · 博物馆陨石展品已点亮",small:true}];
+  });
+  renderMeteorLayer();
+}
+/* 猫头鹰停在顶栏（HUD）一角：随 renderHud 内联渲染（在顶栏流内排布，不用 fixed 浮层，避免压住搜索按钮/同步徽标）；
+   重现口径：同日未消费时每次打开都在（刷新/重开照常出现），点了才走 */
+function randOwlHudHtml(){
+  var e=S.randEvent;
+  if(!e||e.type!=="owl"||e.consumed||e.date!==todayStr()||document.body.classList.contains("locked"))return "";
+  return '<button type="button" id="rand-owl" data-act="rand-owl-tap" aria-label="一只猫头鹰" style="background:none;border:0;padding:2px;cursor:pointer;line-height:0">'+pixIcon("owl",30)+"</button>";
+}
+function renderOwlLayer(){var root=document.getElementById("randowl-root");if(root)root.innerHTML="";}
+function tapOwl(){
+  var e=S.randEvent;
+  if(!e||e.type!=="owl"||e.consumed||e.date!==todayStr())return;
+  mutate(function(){
+    S.randEvent.consumed=true;
+    addLedger("gold",5,"随机事件：猫头鹰的小礼",todayStr(),"event:"+todayStr());
+    return [{icon:"owl",title:"猫头鹰飞走了",sub:"留下了 +5 G",small:true}];
+  });
+  renderOwlLayer();
+}
+/* 合并规则：date 不同取较新 date 整份；同 date 取 consumed 为 true 的一份（两边 consumed 状态相同则取 L）；payload 随整份走 */
+function mergeRandEventStates(L,R){
+  var le=(L.randEvent&&typeof L.randEvent==="object"&&!Array.isArray(L.randEvent))?L.randEvent:null;
+  var re=(R.randEvent&&typeof R.randEvent==="object"&&!Array.isArray(R.randEvent))?R.randEvent:null;
+  function clean(e){return {date:typeof e.date==="string"?e.date:"",type:RAND_EVENT_TYPES.indexOf(e.type)>=0?e.type:"none",payload:(e.payload&&typeof e.payload==="object"&&!Array.isArray(e.payload))?e.payload:null,consumed:!!e.consumed};}
+  if(!le&&!re)return {date:"",type:"none",payload:null,consumed:false};
+  if(!le)return clean(re);
+  if(!re)return clean(le);
+  var ld=String(le.date||""),rd=String(re.date||"");
+  if(rd>ld)return clean(re);
+  if(ld>rd)return clean(le);
+  if(!!le.consumed!==!!re.consumed)return clean(le.consumed?le:re);
+  return clean(le);
+}
+
 /* ---------- 12. 节日节气：今日页与日历 ---------- */
 function festivalBannerHtml(date){
   var f=festivalOf(date);if(!f)return "";
@@ -4114,7 +4292,8 @@ function renderHud(){
     +'<div class="hud-extra" style="display:flex;align-items:center;gap:2px" aria-label="今日待办完成 '+done+"/"+my.length+'">'+heartsHtml+"</div>"
     +'<div class="hud-extra" style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px;min-width:120px" aria-label="今日进度 '+progress+'%"><span class="xs" style="white-space:nowrap;color:#f3dfba">今日进度</span><div style="height:12px;flex:1;background:#3a2110;border:2px solid #ffe9a8"><div style="width:'+progress+'%;height:100%;background:#5da33c;transition:width .4s"></div></div><span class="font-num" style="font-size:10px;color:#ffe9a8">'+progress+"%</span></div>"
     +'<button type="button" class="pix-btn pix-btn-ghost" data-act="search-open" aria-label="全局搜索" style="margin-left:auto"><span style="display:inline-flex;align-items:center;gap:4px">'+pixIcon("search",15)+" 搜索</span></button>"
-    +'<span class="pix-tag sync-badge" style="'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span>';
+    +'<span class="pix-tag sync-badge" style="'+syncBadgeStyle()+'" role="status">'+esc(badgeInfo().text)+'</span>'
+    +randOwlHudHtml();
 }
 function navButton(n,iconOnly){
   var active=ui.page===n.key;
@@ -6420,6 +6599,7 @@ function render(){
   if(junimoEnsureToday())save();
   if(noteEnsureToday())save();
   if(forageEnsureToday())save();
+  if(randEventEnsureToday())save();
   if(!document.body.classList.contains("locked")){
     var seasonRewardBanners=checkSeasonRewards();
     if(seasonRewardBanners.length){save();pushBanners(seasonRewardBanners);}
@@ -6435,7 +6615,7 @@ function render(){
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
-  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();renderNoteLayer();renderForageLayer();
+  renderHud();renderSidebar();renderDrawer();renderPage();renderFx();renderJunimoLayer();renderNoteLayer();renderForageLayer();renderRandEventLayers();
   if(keepScroll)window.scrollTo(0,y);
   restoreEditState(cap);
   lastRenderPage=ui.page;
@@ -6514,6 +6694,8 @@ document.addEventListener("click",function(e){
     case "quest-abandon":questAbandon(el.dataset.key);break;
     case "note-open":openSecretNote();break;
     case "forage-collect":collectForage();break;
+    case "rand-meteor-pick":pickMeteor();break;
+    case "rand-owl-tap":tapOwl();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
     /* 待办 */
