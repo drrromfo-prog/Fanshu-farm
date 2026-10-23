@@ -265,6 +265,7 @@
       .tv-chans{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
       .tv-feet{display:flex;justify-content:space-between;padding:0 26px;margin-top:6px;pointer-events:none;}
       .tv-feet i{display:block;width:22px;height:5px;background:#4a2c14;}
+      .mail-badge{position:absolute;top:-4px;right:-6px;min-width:20px;height:20px;padding:0 5px;background:#d43a25;border:2px solid #4a2c14;border-radius:10px;color:#fff6da;font-size:12px;font-weight:700;line-height:16px;text-align:center;box-sizing:border-box;}
     </style>
   </head>
   <body class="locked" style="overflow:hidden">
@@ -925,7 +926,7 @@ function defaultState(){
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
     unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],decor:{owned:[],placed:[]},newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]},
-    catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
+    mail:[],catPet:{dates:[]},catCare:{deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -944,7 +945,7 @@ function mergeDefaults(v){
   return out;
 }
 /* 老数据兜底 + 钱包基数迁移：_baseGold/_basePoints 按当前余额与账本反推，迁移前后余额必须不变 */
-var LIST_KEYS=["todos","memos","reviews","moods","studyTopics","studyLogs","curiosities","workouts","financeTx","savingsGoals","habits","habitLogs","workItems","pomodoros","anchors","anchorLogs","cycles","shopping","shopRewards","redemptions","ledger","sebClicks","goldOwned","merchantOwned","districts","friends"];
+var LIST_KEYS=["todos","memos","reviews","moods","studyTopics","studyLogs","curiosities","workouts","financeTx","savingsGoals","habits","habitLogs","workItems","pomodoros","anchors","anchorLogs","cycles","shopping","shopRewards","redemptions","ledger","sebClicks","goldOwned","merchantOwned","districts","friends","mail"];
 function normalizeState(){
   LIST_KEYS.forEach(function(k){
     if(!Array.isArray(S[k]))S[k]=(k==="anchors")?seedAnchors():(k==="cycles")?seedCycles():[];
@@ -1009,6 +1010,17 @@ function normalizeState(){
   var cpSeen={};S.catPet.dates=S.catPet.dates.filter(function(d){return typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!cpSeen[d]&&(cpSeen[d]=1);}).sort();
   if(!S.catCare||typeof S.catCare!=="object"||Array.isArray(S.catCare))S.catCare={deworm:"",vaccine:"",dewormUAt:0,vaccineUAt:0};
   ["deworm","vaccine"].forEach(function(k){if(typeof S.catCare[k]!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(S.catCare[k]))S.catCare[k]="";if(typeof S.catCare[k+"UAt"]!=="number"||isNaN(S.catCare[k+"UAt"])||S.catCare[k+"UAt"]<0)S.catCare[k+"UAt"]=0;});
+  if(!Array.isArray(S.mail))S.mail=[];
+  var mailSeen={};
+  S.mail=S.mail.filter(function(m){
+    if(!m||typeof m.key!=="string"||!m.key||mailSeen[m.key])return false;
+    mailSeen[m.key]=1;
+    if(m.id==null)m.id=m.key;
+    if(typeof m.date!=="string")m.date="";
+    m.from=String(m.from==null?"":m.from);m.title=String(m.title==null?"":m.title);m.body=String(m.body==null?"":m.body);
+    m.read=!!m.read;
+    return true;
+  });
   if(typeof S._profileUAt!=="number")S._profileUAt=0;
 }
 var S;
@@ -1223,6 +1235,8 @@ function mergeStates(L,R){
     dates.sort();
     out.catPet={dates:dates};
   })();
+  /* 邮箱来信：按 key 并集（两边独有信都保留），同一 key 的 read 取或，正文等字段以先到为准（同 key 内容恒等） */
+  out.mail=mergeMailLists(L.mail,R.mail);
   /* 朋友互动事件：记录本体按 uAt 取胜者会丢掉另一台的事件，这里按 (date+type+bday) 复合键并集去重，两边独有都保留；好感全部派生、不存计数器 */
   out.friends.forEach(function(fr){
     var lf=null,rf=null;
@@ -2874,7 +2888,7 @@ var ui={
   workFocus:null,tvChannel:"weather",tvTipShift:0,
   planFollow:true,reviewFollow:true,newsFollow:true,
   workList:{office:{q:"",status:"未完成"},medical:{q:"",status:"未完成",district:"全部",soon:false},cert:{q:"",status:"未完成",district:"全部",soon:false}},
-  shopMsg:"",friendMsg:""
+  shopMsg:"",friendMsg:"",mailOpen:null
 };
 function panel(title,icon,inner,extra){
   return '<section class="wood-panel panel"'+(extra||"")+">"
@@ -3164,6 +3178,113 @@ function checkSeasonRewards(){
     }
   });
   return banners;
+}
+
+
+/* ---------- 邮箱来信（今日页） ---------- */
+/* 信件只由事实触发，寄信人只用系统性身份（鹈鹕镇邮局），不冒充朋友本人；文案只写事实，低落心情日同样只出事实句。
+   状态 S.mail=[{id,key,date,from,title,body,read}]，生成全走 deliverMail 按 key 幂等，多次/多设备渲染不重复生成；
+   云端合并在 mergeStates 里按 key 并集、read 取或（mergeMailLists）。本功能不发金币/积分、不写账本。 */
+var MAIL_FROM_POST="鹈鹕镇邮局";
+ICONS.mailUp=[[3,5,9,6,"#3a6ea8"],[3,5,9,2,"#2c4a73"],[4,8,3,1,"#ffd83d"],[7,11,2,4,"#6b3f1d"],[12,2,1,5,"#6b3f1d"],[9,2,3,2,"#e13b3b"]];
+ICONS.mailDown=[[3,5,9,6,"#3a6ea8"],[3,5,9,2,"#2c4a73"],[4,8,3,1,"#ffd83d"],[7,11,2,4,"#6b3f1d"],[12,6,1,3,"#6b3f1d"],[11,9,4,2,"#e13b3b"]];
+function mailList(){return (typeof S!=="undefined"&&S&&Array.isArray(S.mail))?S.mail:[];}
+function mailUnreadCount(){return mailList().filter(function(m){return m&&!m.read;}).length;}
+function mailHasKey(key){return mailList().some(function(m){return m&&m.key===key;});}
+/* 公开投递口（预留给后续功能调用，如第 13 项爷爷评价信）：deliverMail({key,date,from,title,body})。
+   同 key 已存在则跳过并返回 false；新投递成功返回 true。date 缺省为今天，from 缺省为鹈鹕镇邮局，新信恒为未读。 */
+function deliverMail(o){
+  if(!o||typeof o.key!=="string"||!o.key)return false;
+  if(!Array.isArray(S.mail))S.mail=[];
+  if(mailHasKey(o.key))return false;
+  S.mail.push({id:uid(),key:o.key,date:(typeof o.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(o.date))?o.date:todayStr(),from:String(o.from||MAIL_FROM_POST),title:String(o.title||""),body:String(o.body||""),read:false});
+  return true;
+}
+/* 纯合并助手（mergeStates 与列表排序共用）：按 key 并集，同一 key 的 read 取或，其余字段以先出现的一份为准；
+   结果按日期倒序、同日按 key 升序，保证多设备合并与列表渲染顺序稳定 */
+function mergeMailLists(a,b){
+  var byKey={},order=[];
+  [a,b].forEach(function(arr){
+    (Array.isArray(arr)?arr:[]).forEach(function(m){
+      if(!m||typeof m.key!=="string"||!m.key)return;
+      if(!byKey[m.key]){byKey[m.key]={id:(m.id!=null?m.id:m.key),key:m.key,date:(typeof m.date==="string"?m.date:""),from:String(m.from==null?"":m.from),title:String(m.title==null?"":m.title),body:String(m.body==null?"":m.body),read:!!m.read};order.push(m.key);}
+      else byKey[m.key].read=byKey[m.key].read||!!m.read;
+    });
+  });
+  return order.map(function(k){return byKey[k];}).sort(function(x,y){
+    if(x.date!==y.date)return x.date<y.date?1:-1;
+    return x.key<y.key?-1:(x.key>y.key?1:0);
+  });
+}
+function mailSorted(){return mergeMailLists(mailList(),[]);}
+/* 信件生成器：挂在 render() 的统一状态检查点（与 checkMuseumGrants 同族），每次检查按当前事实补生成缺失的信，key 幂等。
+   三类触发：朋友生日 3 天内（nextBirthdayOf 口径，含农历换算）、当季与上一季收集包集齐（bundleProgressOf 口径，与发奖检查同查两季）、
+   星之果实点亮（stardropMet 口径逐颗）。返回本次新增封数；新增时内部 save()。 */
+function checkMail(){
+  var added=0;var today=todayStr();
+  (Array.isArray(S.friends)?S.friends:[]).forEach(function(f){
+    if(!f||f.id==null)return;
+    var nb=nextBirthdayOf(f,today);
+    if(!nb||!nb.date||nb.daysLeft==null||nb.daysLeft<0||nb.daysLeft>3)return;
+    var dp=nb.date.split("-").map(Number);
+    var body=(f.name||"")+" 的生日是 "+dp[1]+" 月 "+dp[2]+" 日，"+(nb.daysLeft===0?"就是今天。":("还有 "+nb.daysLeft+" 天。"));
+    if((f.giftIdeas||"").trim())body+="档案里记的送礼想法："+String(f.giftIdeas).trim()+"。";
+    if(deliverMail({key:"mail:bday:"+f.id+":"+nb.date.slice(0,4),date:today,from:MAIL_FROM_POST,title:"生日提醒："+(f.name||""),body:body}))added++;
+  });
+  var curKey=seasonKeyOf(today);
+  [curKey,prevSeasonKeyOf(curKey)].forEach(function(k){
+    var pr=bundleProgressOf(k);
+    if(!pr.complete)return;
+    var facts=BUNDLE_ITEMS.map(function(it){return it.label+" "+(pr.counts[it.key]||0)+"/"+it.target+" "+it.unit;}).join("、");
+    if(deliverMail({key:"mail:bundle:"+k,date:today,from:MAIL_FROM_POST,title:"收集包集齐："+seasonLabelOf(k),body:seasonLabelOf(k)+"收集包已集齐。六项记录："+facts+"。"}))added++;
+  });
+  STARDROPS.forEach(function(d){
+    if(!stardropMet(d.key))return;
+    if(deliverMail({key:"mail:stardrop:"+d.key,date:today,from:MAIL_FROM_POST,title:"星之果实："+d.label,body:"星之果实已点亮："+d.label+"。陈列架在个人简介页。"}))added++;
+  });
+  if(added>0)save();
+  return added;
+}
+/* 今日页邮箱入口：未读时红旗竖起（mailUp 像素图标）并带未读数徽标，无未读时红旗放下（mailDown）且无徽标 */
+function mailEntryHtml(){
+  var unread=mailUnreadCount();var total=mailList().length;
+  return '<section class="wood-panel panel" aria-label="邮箱">'
+    +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:100%">'
+    +'<button type="button" style="background:none;border:0;cursor:pointer;padding:4px;display:inline-flex;position:relative;flex-shrink:0" data-act="mail-open" aria-label="打开邮箱'+(unread?("，有 "+unread+" 封未读信"):"")+'">'
+    +pixIcon(unread?"mailUp":"mailDown",44)
+    +(unread?'<span class="mail-badge" aria-hidden="true">'+unread+"</span>":"")
+    +"</button>"
+    +'<div style="flex:1;min-width:110px"><div class="font-pixel" style="font-size:16px">邮箱</div>'
+    +'<p class="small dim" style="margin:2px 0 0">'+(total===0?"还没有信。":(unread?("有 "+unread+" 封未读信。"):("共 "+total+" 封信，都看过了。")))+"</p></div>"
+    +'<button type="button" class="pix-btn" data-act="mail-open" aria-label="打开信件列表">看信</button>'
+    +"</div></section>";
+}
+function markMailRead(key){
+  var changed=false;
+  mailList().forEach(function(m){if(m&&m.key===key&&!m.read){m.read=true;changed=true;}});
+  return changed;
+}
+function markAllMailRead(){
+  var changed=false;
+  mailList().forEach(function(m){if(m&&!m.read){m.read=true;changed=true;}});
+  return changed;
+}
+/* 信件列表弹窗（复用站内 modal 体系）：按日期倒序，每封显示寄信人/标题/日期/已读态；点一封展开正文并自动标已读 */
+function openMailModal(){
+  var list=mailSorted();
+  var inner="";
+  if(list.length>0)inner+='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button type="button" class="pix-btn pix-btn-ghost" data-act="mail-read-all" aria-label="全部标为已读">全部标已读</button></div>';
+  if(list.length===0)inner+=emptyState("mailbox","邮箱是空的，有新信时红旗会竖起来。");
+  else inner+=list.map(function(m){
+    var open=ui.mailOpen===m.key;
+    return '<article class="paper-panel" style="padding:10px 12px;margin-bottom:8px;max-width:100%'+(m.read?"":";background:#fdf3c9")+'">'
+      +'<button type="button" style="background:none;border:0;cursor:pointer;padding:0;width:100%;font-family:inherit;color:inherit;text-align:left" data-act="mail-read" data-key="'+esc(m.key)+'" aria-expanded="'+(open?"true":"false")+'" aria-label="'+(open?"收起":"展开")+"信件："+esc(m.title)+'">'
+      +'<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+pixIcon(m.read?"mailDown":"mailUp",22)+'<b class="small" style="flex:1;min-width:90px">'+esc(m.title)+"</b>"+(m.read?tag("已读","pix-tag-gray"):tag("未读","pix-tag-red"))+"</span>"
+      +'<span class="xs dim" style="display:block;margin-top:2px">'+esc(m.from)+" · "+esc(m.date)+"</span></button>"
+      +(open?'<p class="small" style="margin:8px 0 0;white-space:pre-wrap;line-height:1.7;overflow-wrap:break-word">'+esc(m.body)+"</p>":"")
+      +"</article>";
+  }).join("");
+  modal("邮箱",inner,true);
 }
 
 /* ---------- 10.6 博物馆图鉴 ---------- */
@@ -3880,6 +4001,7 @@ function lifePage(){
     +'<div class="row wrap"><button type="button" class="pix-btn pix-btn-green" data-act="go" data-page="plan"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("backpack",16)+' 看今日计划</span></button>'
     +'<button type="button" class="pix-btn" data-act="go" data-page="workToday"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("board",16)+' 今日工作</span></button>'
     +'<a href="#evening-news" class="pix-btn pix-btn-blue"><span style="display:inline-flex;align-items:center;gap:6px">'+pixIcon("news",16)+" 鹈鹕报道</span></a></div></section>";
+  h+=mailEntryHtml();
   var bdayList=S.friends.map(function(f){return{f:f,nb:nextBirthdayOf(f,today)};})
     .filter(function(x){return x.nb.daysLeft!=null&&x.nb.daysLeft<=3;})
     .sort(function(a,b){return a.nb.daysLeft-b.nb.daysLeft;});
@@ -5869,6 +5991,7 @@ function render(){
     if(skillBanners.length)pushBanners(skillBanners);
     var museumBanners=checkMuseumGrants();
     if(museumBanners.length)pushBanners(museumBanners);
+    checkMail();
   }
   var cap=captureEditState();
   var keepScroll=lastRenderPage===ui.page;var y=keepScroll?(window.scrollY||0):0;
@@ -5938,6 +6061,15 @@ document.addEventListener("click",function(e){
     case "junimo-pet":junimoPetWave();break;
     case "cat-pet":petCat();break;
     case "cat-care-edit":catCareModal();break;
+    case "mail-open":ui.mailOpen=null;openMailModal();break;
+    case "mail-read":{
+      var mk=el.dataset.key;
+      if(markMailRead(mk)){save();render();}
+      ui.mailOpen=(ui.mailOpen===mk)?null:mk;
+      openMailModal();break;}
+    case "mail-read-all":{
+      if(markAllMailRead()){save();render();}
+      openMailModal();break;}
     case "note-open":openSecretNote();break;
     case "modal-close":closeModal();break;
     case "modal-backdrop":if(e.target===el)closeModal();break;
