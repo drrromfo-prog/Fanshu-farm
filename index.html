@@ -223,6 +223,8 @@
       .fx-meteor{position:absolute;width:60px;height:2px;background:linear-gradient(90deg,rgba(255,248,220,0),#fff8dc);opacity:0;animation:fxmeteor 10s linear infinite;}
       @keyframes fxmeteor{0%,70%{transform:translate(0,0) rotate(-35deg);opacity:0;}75%{opacity:1;}90%,100%{transform:translate(-44vw,29vh) rotate(-35deg);opacity:0;}}
       .fx-leaf{position:absolute;top:-12px;width:8px;height:8px;animation:fxfall 8s linear infinite;}
+      .fx-aurora{position:absolute;top:-10px;width:34%;height:110px;background:linear-gradient(180deg,rgba(110,240,180,0),rgba(110,240,180,.34) 35%,rgba(168,120,255,.28) 70%,rgba(168,120,255,0));animation:fxaurora 11s ease-in-out infinite alternate;}
+      @keyframes fxaurora{from{transform:skewX(-14deg) translateX(0);opacity:.5;}50%{opacity:.95;}to{transform:skewX(-6deg) translateX(5vw);opacity:.6;}}
       @keyframes fxfall{0%{transform:translate(0,-12px) rotate(0deg);}25%{transform:translate(14px,26vh) rotate(95deg);}50%{transform:translate(-10px,52vh) rotate(180deg);}75%{transform:translate(12px,78vh) rotate(270deg);}100%{transform:translate(0,104vh) rotate(360deg);}}
       @media (prefers-reduced-motion: reduce){
         #fx-layer>*{display:none;}
@@ -563,11 +565,15 @@ var PACK2_LINES={
  haley:["新买的口红试色试了半条胳膊，最后选了第一支。……女人的直觉，懂吗？不懂也没关系，我选对了就行。","今天拍的云像棉花糖，看得我都饿了。回去路上买了块蛋糕——是云先勾引我的。","艾米丽说我拍照只拍好看的。废话，难看的拍下来干嘛，留着气自己吗？","草莓蛋糕要吃刚做好的，奶油塌了就不配叫甜点了。……多买了一块，给你的。别声张，显得我多好似的。","自拍了三十张，选出一张。剩下二十九张？删了。我的美貌，不需要证据链。","下雨把新鞋弄湿了，气得我当场又下单了一双。……购物疗法，有效，本人亲测。","镇上新开的甜品店，提拉米苏还行。比我做的差一点。……我没做过？那也差一点。"],
  linus:["昨夜的星星格外亮，我数到一半睡着了——星星不会介意，它们有的是时间。","帐篷边的薄荷长疯了。摘一把泡水，清凉的味道，是山给的。","下雨的时候，我就坐在帐篷口看湖。雨点落在水面上，像谁在轻轻敲门。","有年轻人问我，住帐篷不冷吗？冷啊。但星星看得清楚，这笔账，划算。","今早捡到一根特别直的树枝，做手杖正好。山里的东西，捡到就是缘分。","我把晒干的野果分给路过的鸟。它们吃得高兴，我看着也高兴。日子就是这样，你分我一点，我分你一点。","秋天要来了，松果落了一地。捡几个放在帐篷口，冬天生火，就靠它们引火了。"]
 };
-function pickCharLineOwned(char,scene,seed,packOwned,pack2Owned){
+var MERCHANT_PACK_LINES={
+ sebastian:["旅行商人的摊子上有一把会自己响的铃铛。他说是风吹的。……风那天根本没动。","商人问我要不要买『城里的地图』。我说我连镇子都没走遍。他点点头，把地图收回去了。","他卖的茶闻起来像雨后的土。……别问我为什么知道雨后的土是什么味儿。","商人说他的货都是从很远的地方背来的。背包比他人还大。……有点佩服，就一点。","摊子上有个音乐盒，拧一下响三秒。我拧了四次。他没拦我，大概是习惯了怪人。","他问我镇上有没有湖。带他去了。他站在湖边半天，说这地方适合发呆。……算他懂行。","商人临走时送我一颗玻璃珠，说能换好运。我把玻璃珠放窗台上了。……跟青蛙没关系，别多想。"]
+};
+function pickCharLineOwned(char,scene,seed,packOwned,pack2Owned,tmPackOwned){
   var base=CHAR_SCENE_LINES[char][scene]||CHAR_SCENE_LINES[char].daily;
   var pool=base;
   if(packOwned)pool=pool.concat(PACK_LINES[char]);
   if(pack2Owned)pool=pool.concat(PACK2_LINES[char]);
+  if(tmPackOwned&&MERCHANT_PACK_LINES[char])pool=pool.concat(MERCHANT_PACK_LINES[char]);
   return pool[Math.abs(seed)%pool.length]||pool[0]||"";
 }
 var LOW_BATTERY_LINES={sebastian:"……社交电量告急。让我缓缓。……好吧，再陪你说一句。",haley:"我累了，笑都笑不动了。……就再陪你一句，多了没有。",linus:"老人家要歇一歇了。……不过，再陪你说一句，还是可以的。"};
@@ -684,6 +690,17 @@ var GOLD_SHOP_DISPLAY=[
  {key:"acc_linus_hat",name:"莱纳斯的毛线帽",desc:"给莱纳斯戴上：山里风大，正合用。在悬浮小人和头像处可见。",price:180,group:"acc",char:"linus"},
  {key:"acc_linus_scarf",name:"莱纳斯的围巾",desc:"给莱纳斯围上：红围巾配白胡子。在悬浮小人和头像处可见。",price:220,group:"acc",char:"linus"}
 ];
+/* ============ 旅行商人限定池（奖励商店摊位，周五/周日出摊） ============
+   称号走积分 40 分、特效与台词包走金币（特效 260 G / 台词包 200 G），均高于常规货；
+   拥有标记单独存 S.merchantOwned（与 goldOwned 分开记来源），生效方式与常规同类一致。 */
+var MERCHANT_POOL=[
+ {key:"tm_title_starpost",name:"星尘邮差",desc:"旅行商人带来的限定称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:40,currency:"points",group:"title"},
+ {key:"tm_title_cloudwatch",name:"云上守望者",desc:"旅行商人带来的限定称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:40,currency:"points",group:"title"},
+ {key:"tm_title_dawnroad",name:"破晓赶路人",desc:"旅行商人带来的限定称号牌。佩戴后显示在简介、今日页问候和顶栏的名字旁。",price:40,currency:"points",group:"title"},
+ {key:"fx_aurora",name:"极光帷幕",desc:"绿紫色的光带在农场上空缓缓飘动。旅行商人限定，买后可在本页开启或关闭。",price:260,currency:"gold",group:"fx"},
+ {key:"fx_petal",name:"花瓣雨",desc:"粉色花瓣慢慢飘落。旅行商人限定，买后可在本页开启或关闭。",price:260,currency:"gold",group:"fx"},
+ {key:"pack_tm_sebastian",name:"塞巴斯蒂安台词包·旅人手记",desc:"旅行商人带来的限定台词包：新增 7 句塞巴斯蒂安的日常碎碎念，买后加入他的通用台词池轮换。",price:200,currency:"gold",group:"pack",char:"sebastian"}
+];
 var KIND_LABEL={office:"办公室行政",medical:"医保事务",cert:"办证事务"};
 var OFFICE_CATEGORIES=["办公用品","采购","固定资产","会议事务","合同","供应商","报销","后勤","其他行政事项"];
 var WORKOUT_TYPES=["游泳","芭杆","八段锦","散步","瑜伽","其他"];
@@ -753,7 +770,7 @@ function defaultState(){
     studyTopics:[],studyLogs:[],curiosities:[],workouts:[],financeTx:[],savingsGoals:[],
     habits:[],habitLogs:[],workItems:[],pomodoros:[],
     anchors:seedAnchors(),anchorLogs:[],cycles:seedCycles(),shopping:[],
-    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
+    unlocked:{},shopRewards:[],redemptions:[],ledger:[],sebClicks:[],goldOwned:[],merchantOwned:[],newsDays:[],friends:[],junimo:{date:"",catches:0,spot:null,rewarded:false},garden:{},stardrops:{},skillGrants:{},notes:{date:"",noteId:null,page:null,corner:null,found:[],cycle:[]}
   };
 }
 /* 逐键补全默认值：任意来源的存档缺哪键补哪键（含 profile 子键），多余的键（_del、_baseGold 等）保留，老数据不白屏 */
@@ -770,7 +787,7 @@ function mergeDefaults(v){
   return out;
 }
 /* 老数据兜底 + 钱包基数迁移：_baseGold/_basePoints 按当前余额与账本反推，迁移前后余额必须不变 */
-var LIST_KEYS=["todos","memos","reviews","moods","studyTopics","studyLogs","curiosities","workouts","financeTx","savingsGoals","habits","habitLogs","workItems","pomodoros","anchors","anchorLogs","cycles","shopping","shopRewards","redemptions","ledger","sebClicks","goldOwned","districts","friends"];
+var LIST_KEYS=["todos","memos","reviews","moods","studyTopics","studyLogs","curiosities","workouts","financeTx","savingsGoals","habits","habitLogs","workItems","pomodoros","anchors","anchorLogs","cycles","shopping","shopRewards","redemptions","ledger","sebClicks","goldOwned","merchantOwned","districts","friends"];
 function normalizeState(){
   LIST_KEYS.forEach(function(k){
     if(!Array.isArray(S[k]))S[k]=(k==="anchors")?seedAnchors():(k==="cycles")?seedCycles():[];
@@ -1042,6 +1059,10 @@ function mergeStates(L,R){
   var go=(L.goldOwned||[]).slice();
   (R.goldOwned||[]).forEach(function(x){if(go.indexOf(x)<0)go.push(x);});
   out.goldOwned=go;
+  /* 旅行商人限定货拥有标记：与常规货分开存 merchantOwned，合并同样取并集，不丢已购限定货 */
+  var mo=(L.merchantOwned||[]).slice();
+  (R.merchantOwned||[]).forEach(function(x){if(mo.indexOf(x)<0)mo.push(x);});
+  out.merchantOwned=mo;
   /* 星之果实授予记录：取并集（哪台设备授过都保留，已授日期取较早的一天）；
      合并后再按基线口径逐个派生校验，不达标的直接删掉，防止旧设备把已撤销的果子合回来 */
   (function(){
@@ -2246,6 +2267,41 @@ function buyGoldItem(key){
   S.goldOwned.push(key);
   return{ok:true};
 }
+/* ============ 旅行商人（奖励商店摊位） ============
+   出摊日：每周五、周日。「同周」以周一为界（weekStartOf 取本周周一），
+   周五与紧随的周日同属一周、抽同一组货；跨周（下个周一之后）换组。
+   周种子：对池内每件货算 newsHash("merchant|"+本周周一+"|"+货品 key)，按哈希升序取前 3 件——
+   无随机数、同周多次打开与不同设备结果一致，与鹈鹕报道 newsHash 的按日期种子风格一致。 */
+function merchantIsOpen(date){var d=dowOf(date||todayStr());return d===5||d===0;}
+function merchantStock(date){
+  var ws=weekStartOf(date||todayStr());
+  if(MERCHANT_POOL.length<=3)return MERCHANT_POOL.slice();
+  return MERCHANT_POOL.slice().sort(function(a,b){
+    var ha=newsHash("merchant|"+ws+"|"+a.key),hb=newsHash("merchant|"+ws+"|"+b.key);
+    return ha<hb?-1:(ha>hb?1:(a.key<b.key?-1:1));
+  }).slice(0,3);
+}
+function merchantOwnedHas(key){return (S.merchantOwned||[]).indexOf(key)>=0;}
+function shopOwnedAny(key){return S.goldOwned.indexOf(key)>=0||merchantOwnedHas(key);}
+function merchantDefOf(key){var d=null;MERCHANT_POOL.forEach(function(i){if(i.key===key)d=i;});return d;}
+function buyMerchantItem(key,date){
+  date=date||todayStr();
+  var def=merchantDefOf(key);
+  if(!def)return{ok:false,error:"这件商品不存在"};
+  if(!merchantIsOpen(date))return{ok:false,error:"旅行商人今天不摆摊（周五、周日来）"};
+  if(!merchantStock(date).some(function(i){return i.key===key;}))return{ok:false,error:"「"+def.name+"」这周没摆出来"};
+  if(merchantOwnedHas(key))return{ok:false,error:"「"+def.name+"」已经买过了"};
+  if(def.currency==="points"){
+    if(S.wallet.points<def.price)return{ok:false,error:"积分不足：需要 "+def.price+" 分，当前 "+S.wallet.points+" 分"};
+    addLedger("points",-def.price,"旅行商人购买："+def.name,date);
+  }else{
+    if(S.wallet.gold<def.price)return{ok:false,error:"金币不足：需要 "+def.price+" G，当前 "+S.wallet.gold+" G"};
+    addLedger("gold",-def.price,"旅行商人购买："+def.name,date);
+  }
+  if(!Array.isArray(S.merchantOwned))S.merchantOwned=[];
+  S.merchantOwned.push(key);
+  return{ok:true};
+}
 function setActiveSkin(skin){
   if(skin!=="default"&&S.goldOwned.indexOf(skin)<0)return;
   S.profile.activeSkin=skin;touchProfile();
@@ -2568,6 +2624,7 @@ function renderGlobalResults(){
 function wornTitleName(){
   var key=S.profile.wornTitle;if(!key)return null;
   var d=null;GOLD_SHOP_DISPLAY.forEach(function(x){if(x.key===key)d=x;});
+  if(!d)d=merchantDefOf(key);
   return d?d.name:null;
 }
 function wornTitleTag(){
@@ -2582,13 +2639,20 @@ function renderFx(){
   try{reduce=!!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches);}catch(e){}
   if(!reduce&&typeof S!=="undefined"&&S&&S.profile){
     var fx=S.profile.fxOn||{};
-    var owned=function(k){return S.goldOwned.indexOf(k)>=0;};
+    var owned=function(k){return S.goldOwned.indexOf(k)>=0||(S.merchantOwned||[]).indexOf(k)>=0;};
     var els=[];
     if(fx.firefly&&owned("fx_firefly")){
       for(var i=0;i<12;i++)els.push('<span class="fx-firefly" style="left:'+((i*37)%97)+'%;top:'+(((i*23)%78)+8)+'%;animation-duration:'+(6+(i%5)*1.7).toFixed(1)+'s;animation-delay:-'+(i*1.3).toFixed(1)+'s"></span>');
     }
     if(fx.meteor&&owned("fx_meteor")){
       for(var j=0;j<3;j++)els.push('<span class="fx-meteor" style="left:'+(52+j*16)+'%;top:'+(3+j*9)+'%;animation-duration:'+(9+j*4)+'s;animation-delay:'+(j*3.7).toFixed(1)+'s"></span>');
+    }
+    if(fx.aurora&&owned("fx_aurora")){
+      for(var a=0;a<3;a++)els.push('<span class="fx-aurora" style="left:'+(8+a*26)+'%;animation-duration:'+(11+a*3)+'s;animation-delay:-'+(a*2.9).toFixed(1)+'s"></span>');
+    }
+    if(fx.petal&&owned("fx_petal")){
+      var petalCols=["#f6a8c8","#f28bb4","#fbd0e0","#ee7fa8"];
+      for(var q=0;q<8;q++)els.push('<span class="fx-leaf" style="left:'+((q*17)%94)+'%;background:'+petalCols[q%4]+';border-radius:60% 0 60% 0;animation-duration:'+(8+(q%4)*1.6).toFixed(1)+'s;animation-delay:-'+(q*1.9).toFixed(1)+'s"></span>');
     }
     if(fx.leaves&&owned("fx_leaves")){
       var leafCols=["#d9762e","#c2543a","#e0a832","#a8552e"];
@@ -4649,6 +4713,46 @@ function regionPage(district){
 }
 
 /* ============ 商店：积分奖励 + 金币小卖部 ============ */
+function merchantCardHtml(it){
+  var owned=merchantOwnedHas(it.key);
+  var isPoints=it.currency==="points";
+  var afford=isPoints?S.wallet.points>=it.price:S.wallet.gold>=it.price;
+  var extra="";
+  if(owned){
+    if(it.group==="fx"){
+      var fxOnNow=!!((S.profile.fxOn||{})[it.key.slice(3)]);
+      extra=(fxOnNow?tag("开启中","pix-tag-green"):tag("已关闭","pix-tag-gray"))
+        +'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" data-act="fx-toggle" data-key="'+it.key+'" aria-label="'+(fxOnNow?"关闭":"开启")+esc(it.name)+'">'+(fxOnNow?"关闭":"开启")+"</button>";
+    }else if(it.group==="title"){
+      var wornNow=S.profile.wornTitle===it.key;
+      extra=(wornNow?tag("佩戴中"):"")
+        +'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" data-act="title-wear" data-key="'+it.key+'" aria-label="'+(wornNow?"卸下称号 ":"佩戴称号 ")+esc(it.name)+'">'+(wornNow?"卸下":"佩戴")+"</button>";
+    }
+  }
+  return '<article class="paper-panel" style="padding:12px;text-align:center"><h4 class="font-pixel" style="margin:4px 0 0">'+esc(it.name)+'</h4><p class="xs dim" style="margin:4px 0 0">'+esc(it.desc)+'</p><p class="font-num xs" style="margin:4px 0 0;display:inline-flex;align-items:center;gap:4px">'+pixIcon(isPoints?"star":"coin",12)+" "+it.price+(isPoints?" 分":" G")+" · 限定</p>"
+  +'<div class="row wrap" style="justify-content:center;margin-top:8px">'
+  +(owned?tag("已拥有","pix-tag-green")+extra
+    :'<button type="button" class="pix-btn pix-btn-green pix-btn-sm" '+(afford?"":"disabled")+' data-act="merchant-buy" data-key="'+it.key+'" aria-label="购买 '+esc(it.name)+"，需要 "+it.price+(isPoints?" 积分":" 金币")+'">购买</button>')
+  +"</div>"
+  +(!owned&&!afford?'<p class="xs dim" style="margin:4px 0 0">还差 '+((isPoints?S.wallet.points:S.wallet.gold)>=0?(it.price-(isPoints?S.wallet.points:S.wallet.gold)):0)+(isPoints?" 分":" G")+"</p>":"")+"</article>";
+}
+function merchantPanelHtml(date){
+  date=date||todayStr();
+  var inner;
+  if(!merchantIsOpen(date)){
+    inner='<p class="small" style="margin:0">旅行商人周五、周日来摆摊。</p>';
+  }else{
+    var stock=merchantStock(date);
+    var ownedCount=stock.filter(function(it){return merchantOwnedHas(it.key);}).length;
+    var cards='<div class="grid-cards3">'+stock.map(function(it){return merchantCardHtml(it);}).join("")+"</div>";
+    if(ownedCount>=stock.length){
+      inner='<p class="small" style="margin:0 0 12px">本周摊位上的 '+stock.length+" 件限定货都已买下，摊位空了。下周一换新的一周，商人会带来新的组合。</p>"+cards;
+    }else{
+      inner='<p class="small" style="margin:0 0 12px">旅行商人这周带来 '+stock.length+" 件限定货（本周自 "+weekStartOf(date)+" 周一起）。每件限购一次，买下后永久拥有。</p>"+cards;
+    }
+  }
+  return panel("旅行商人摊位","shop",inner);
+}
 function shopPage(){
   var h='<div class="stack">';
   var inner=(ui.shopMsg?'<p class="small paper-panel" style="padding:8px 12px;margin:0 0 12px" role="status">'+esc(ui.shopMsg)+"</p>":"")
@@ -4665,6 +4769,7 @@ function shopPage(){
     +'<button type="button" class="pix-btn pix-btn-green" style="margin-top:12px" data-act="reward-new" aria-label="新增奖励">＋ 自定义奖励</button>'
     +'<button type="button" class="pix-btn" style="margin-top:12px;margin-left:8px" data-act="reward-templates" aria-label="一键添加模板包">一键添加模板包</button>';
   h+=panel("皮埃尔的奖励柜台","shop",inner);
+  h+=merchantPanelHtml(todayStr());
   var gold='<p class="small" style="margin:0 0 12px">这里只花金币 G。当前金币 <b class="font-num xs">'+S.wallet.gold+"</b> G。买下台词包后，那位小伙伴点开说话时，新句子会混进他的台词里。</p>"
     +(ui.shopMsg?'<p class="small paper-panel" style="padding:8px 12px;margin:0 0 12px" role="status">'+esc(ui.shopMsg)+"</p>":"");
   [{group:"pack",label:"小伙伴台词包",icon:"chat"},{group:"pack2",label:"台词包第二弹",icon:"chat"},{group:"skin",label:"农场季节皮肤",icon:"leaf"},{group:"sign",label:"标题木牌样式",icon:"pinnote"},{group:"fx",label:"农场天气特效",icon:"leaf"},{group:"title",label:"农场称号牌",icon:"star"},{group:"acc",label:"小人配饰",icon:"heart"}].forEach(function(sec){
@@ -4889,6 +4994,7 @@ function loadCompPos(){
 function clampCompPos(p){var b=compBox();return{x:Math.max(0,Math.min(p.x,window.innerWidth-b.w)),y:Math.max(0,Math.min(p.y,window.innerHeight-b.h))};}
 function compPackOwned(c){return S.goldOwned.indexOf("pack_"+c)>=0;}
 function compPack2Owned(c){return S.goldOwned.indexOf("pack2_"+c)>=0;}
+function compMerchantPackOwned(c){return (S.merchantOwned||[]).indexOf("pack_tm_"+c)>=0;}
 function companionSpeak(text){
   comp.line=text;comp.shown="";comp.open=true;
   if(comp.timer)clearInterval(comp.timer);
@@ -4898,7 +5004,7 @@ function companionSpeak(text){
 }
 function companionSay(scene){
   comp.seed+=11;
-  companionSpeak(pickCharLineOwned(comp.char,scene,Date.now()%997,compPackOwned(comp.char),compPack2Owned(comp.char)));
+  companionSpeak(pickCharLineOwned(comp.char,scene,Date.now()%997,compPackOwned(comp.char),compPack2Owned(comp.char),compMerchantPackOwned(comp.char)));
 }
 function companionCongrats(){
   var pool=CONGRATS_LINES[comp.char];
@@ -4965,7 +5071,7 @@ function compTap(){
     var pl=pickPageLine(linePage,pst,comp.char,s);
     if(pl){companionSpeak(pl);return;}
   }
-  companionSpeak(pickCharLineOwned(comp.char,sebSceneForHour(new Date().getHours()),s,compPackOwned(comp.char),compPack2Owned(comp.char)));
+  companionSpeak(pickCharLineOwned(comp.char,sebSceneForHour(new Date().getHours()),s,compPackOwned(comp.char),compPack2Owned(comp.char),compMerchantPackOwned(comp.char)));
 }
 function compChooseModal(){
   modal("选择小伙伴",'<div class="stack" style="gap:8px">'+CHARACTERS.map(function(c){
@@ -5402,6 +5508,13 @@ document.addEventListener("click",function(e){
       if(res3&&res3.ok)toastShop("已买下「"+(def?def.name:"")+"」，-"+(def?def.price:0)+" G 已记入账本。");
       else toastShop(res3?res3.error:"购买失败");
       render();break;}
+    case "merchant-buy":{
+      var mk2=el.dataset.key;var mdef2=merchantDefOf(mk2);
+      var mres=null;
+      mutate(function(){mres=buyMerchantItem(mk2);});
+      if(mres&&mres.ok)toastShop("已买下「"+(mdef2?mdef2.name:"")+"」，-"+(mdef2?mdef2.price:0)+(mdef2&&mdef2.currency==="points"?" 分":" G")+" 已记入账本。");
+      else toastShop(mres?mres.error:"购买失败");
+      render();break;}
     case "gold-use":{
       var g2=el.dataset.group,k3=el.dataset.key;
       mutate(function(){if(g2==="skin")setActiveSkin(k3);else setSignStyle(k3);});
@@ -5513,7 +5626,7 @@ document.addEventListener("click",function(e){
     case "comp-switch":{
       var next=el.dataset.char;comp.char=next;S.profile.companion=next;touchProfile();save();closeModal();
       comp.seed+=29;
-      companionSpeak(pickCharLineOwned(next,"daily",comp.seed,compPackOwned(next),compPack2Owned(next)));
+      companionSpeak(pickCharLineOwned(next,"daily",comp.seed,compPackOwned(next),compPack2Owned(next),compMerchantPackOwned(next)));
       renderCompanion();break;}
   }
 });
